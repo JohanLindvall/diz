@@ -1,19 +1,21 @@
 package main
 
 import (
-	"archive/zip"
-	"context"
+	"flag"
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/JohanLindvall/diz/diz"
-	"github.com/docker/docker/api/types"
+	"github.com/JohanLindvall/diz/imagesource"
+	"github.com/JohanLindvall/diz/str"
+	"github.com/JohanLindvall/diz/zip"
 	"github.com/docker/docker/client"
-	"github.com/ryanuber/go-glob"
 )
 
 var (
-	cli *client.Client
+	cli     *client.Client
+	fromZip = flag.String("fromzip", "", "set to read Docker tags and images from zip file")
 )
 
 func main() {
@@ -22,24 +24,22 @@ func main() {
 		panic(err)
 	}
 	cli = ccli
+	flag.Parse()
 
-	if os.Args[1] == "create" {
-		var writer io.Writer
-		if os.Args[2] == "-" {
-			writer = os.Stdout
-		} else {
-			outf, err := os.Create(os.Args[2])
-			if err != nil {
-				panic(err)
-			}
-			writer = outf
-			defer outf.Close()
-		}
-		err := create(writer, os.Args[3:])
-		if err != nil {
-			panic(err)
-		}
-	} else if os.Args[1] == "restore" {
+	args := flag.Args()
+	switch args[0] {
+	case "list":
+		list(args[1:])
+	case "create":
+		create(args[1], args[2:])
+	case "update":
+		// Copy everything from args[1] to out (args[2]), except the tags found in imageSource.
+	default:
+		os.Exit(1)
+	}
+	os.Exit(0)
+
+	if os.Args[1] == "restore" {
 		file, err := os.Open(os.Args[2])
 		if err != nil {
 			panic(err)
@@ -55,43 +55,49 @@ func main() {
 	}
 }
 
-func create(writer io.Writer, tags []string) error {
-	images, err := cli.ImageList(context.Background(), types.ImageListOptions{})
-	if err != nil {
+func create(fn string, globTags []string) error {
+	return createUpdate(imagesource.NewNullImageSource(), fn, globTags)
+}
+
+func createUpdate(initial imagesource.ImageSource, fn string, globTags []string) error {
+	if s, err := getImageSource(); err != nil {
 		return err
-	}
+	} else {
+		defer s.Close()
+		if tags, err := s.GlobTags(globTags); err != nil {
+			return err
+		} else {
+			var out *os.File
+			if out, err = getOutFile(fn); err != nil {
+				return err
+			}
+			defer out.Close()
+			zipWriter := zip.NewWriter(out)
 
-	imageIds := make([]string, 0)
+			// Copy tags and contents from initial image source (if there is one)
+			var copyTags []string
+			if copyTags, err = initial.GlobTags([]string{"*"}); err != nil {
+				return err
+			}
 
-	for _, image := range images {
-		for _, tag := range tags {
-			for _, repoTag := range image.RepoTags {
-				if repoTag != "<none>:<none>" {
-					if glob.Glob(tag, repoTag) {
-						imageIds = append(imageIds, repoTag)
-					}
+			// Remove tags to be updated
+			copyTags = str.RemoveSlice(copyTags, globTags)
+			var m1, m2 []diz.Manifest
+			if m1, err = s.CopyToZip(zipWriter, copyTags); err != nil {
+				return err
+			}
+
+			if m2, err = s.CopyToZip(zipWriter, tags); err != nil {
+				return err
+			} else {
+				err = diz.WriteManifests(diz.MergeManifests(m1, m2), zipWriter)
+				if er := zipWriter.Close(); err == nil {
+					err = er
 				}
+				return err
 			}
 		}
 	}
-
-	rdr, err := cli.ImageSave(context.Background(), imageIds)
-	if err != nil {
-		return err
-	}
-	defer rdr.Close()
-	zipWriter := zip.NewWriter(writer)
-
-	manifests, err := diz.CopyFromTar(rdr, zipWriter)
-	if err != nil {
-		return err
-	}
-	err = diz.WriteManifests(manifests, zipWriter)
-	if err != nil {
-		return err
-	}
-
-	return zipWriter.Close()
 }
 
 func restore(reader io.ReaderAt, size int64, tags []string) error {
@@ -106,4 +112,38 @@ func restore(reader io.ReaderAt, size int64, tags []string) error {
 	err = archive.CopyToTar(tar, manifest)
 	tar.Close()
 	return err
+}
+
+func list(tags []string) error {
+	if s, err := getImageSource(); err != nil {
+		return err
+	} else {
+		defer s.Close()
+		if result, err := s.GlobTags(tags); err != nil {
+			return err
+		} else {
+			for _, r := range result {
+				fmt.Println(r)
+			}
+		}
+	}
+	return nil
+}
+
+func getImageSource() (imagesource.ImageSource, error) {
+	if *fromZip == "" {
+		return imagesource.NewDockerImageSource(cli), nil
+	} else {
+		return imagesource.NewZipImageSource(*fromZip)
+	}
+}
+
+func getOutFile(fn string) (out *os.File, err error) {
+	if fn == "-" {
+		out = os.Stdout
+	} else {
+		out, err = os.Create(fn)
+	}
+
+	return
 }

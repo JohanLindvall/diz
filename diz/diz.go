@@ -2,12 +2,15 @@ package diz
 
 import (
 	"archive/tar"
-	"archive/zip"
+	gozip "archive/zip"
 	"bytes"
 	"encoding/json"
 	"io"
 	"io/ioutil"
 	"strings"
+
+	"github.com/JohanLindvall/diz/str"
+	"github.com/JohanLindvall/diz/zip"
 
 	"github.com/ryanuber/go-glob"
 )
@@ -18,6 +21,7 @@ var (
 	repos           = "repositories"
 	layersTarSuffix = "/layer.tar"
 	latestTag       = "latest"
+	dotJSON         = ".json"
 )
 
 // Manifest defines a Docker image manifest
@@ -30,14 +34,14 @@ type Manifest struct {
 // Archive holds the data for reading a diz zip archive
 type Archive struct {
 	Manifests []Manifest
-	reader    *zip.Reader
+	reader    *gozip.Reader
 }
 
 type repositories map[string]map[string]string
 
 // NewArchive creates a new archive from the reader
 func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
-	zipReader, err := zip.NewReader(reader, size)
+	zipReader, err := gozip.NewReader(reader, size)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +54,7 @@ func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
 	return &Archive{Manifests: manifests, reader: zipReader}, nil
 }
 
-func getFile(zipReader *zip.Reader, name string) *zip.File {
+func getFile(zipReader *gozip.Reader, name string) *gozip.File {
 	name = dizPrefix + name
 	for _, file := range zipReader.File {
 		if file.Name == name {
@@ -61,7 +65,7 @@ func getFile(zipReader *zip.Reader, name string) *zip.File {
 	return nil
 }
 
-func readManifest(zipReader *zip.Reader) (manifests []Manifest, err error) {
+func readManifest(zipReader *gozip.Reader) (manifests []Manifest, err error) {
 	f := getFile(zipReader, manifestJSON)
 	if f == nil {
 		return
@@ -84,7 +88,7 @@ func readManifest(zipReader *zip.Reader) (manifests []Manifest, err error) {
 	return
 }
 
-type fileHandler func(zf *zip.File, fn string, contents []byte) error
+type fileHandler func(zf *gozip.File, fn string, contents []byte) error
 
 func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForeign, includeManifests bool) (err error) {
 	include := make(map[string]bool, 0)
@@ -142,27 +146,31 @@ func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForei
 
 // CopyToZip copies the contents for the archive, selected by manifests, to the zip writer. The manifest itself is not included
 func (a *Archive) CopyToZip(zipWriter *zip.Writer, manifests []Manifest) (err error) {
-	return a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
+	return a.copyTo(func(zf *gozip.File, fn string, contents []byte) (err error) {
 		var writer io.Writer
 		if zf == nil {
-			if writer, err = zipWriter.Create(fn); err != nil {
-				return
-			}
-			if _, err = io.Copy(writer, bytes.NewReader(contents)); err != nil {
-				return
+			if !zipWriter.Exists(fn) {
+				if writer, err = zipWriter.Create(fn); err != nil {
+					return
+				}
+				if _, err = io.Copy(writer, bytes.NewReader(contents)); err != nil {
+					return
+				}
 			}
 		} else {
 			hdr := zf.FileHeader
-			if writer, err = zipWriter.CreateHeader(&hdr); err != nil {
-				return
+			if !zipWriter.Exists(hdr.Name) {
+				if writer, err = zipWriter.CreateHeader(&hdr); err != nil {
+					return
+				}
+				err = copyZipFile(writer, zf)
 			}
-			err = copyZipFile(writer, zf)
 		}
 		return
 	}, manifests, true, false)
 }
 
-func copyZipFile(writer io.Writer, zf *zip.File) (err error) {
+func copyZipFile(writer io.Writer, zf *gozip.File) (err error) {
 	var readCloser io.ReadCloser
 	if readCloser, err = zf.Open(); err != nil {
 		return
@@ -178,7 +186,7 @@ func copyZipFile(writer io.Writer, zf *zip.File) (err error) {
 func (a *Archive) CopyToTar(writer io.Writer, manifests []Manifest) (err error) {
 	tarWriter := tar.NewWriter(writer)
 
-	err = a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
+	err = a.copyTo(func(zf *gozip.File, fn string, contents []byte) (err error) {
 		var size int64
 		if zf == nil {
 			size = int64(len(contents))
@@ -228,12 +236,15 @@ func CopyFromTar(rdr io.Reader, zipWriter *zip.Writer) (manifests []Manifest, er
 			}
 		} else if header.Name != repos {
 			var entry io.Writer
-			if entry, err = zipWriter.Create(dizPrefix + header.Name); err != nil {
-				return
-			}
-			if header.Typeflag == tar.TypeReg {
-				if _, err = io.Copy(entry, tarReader); err != nil {
+			fn := dizPrefix + header.Name
+			if !zipWriter.Exists(fn) {
+				if entry, err = zipWriter.Create(fn); err != nil {
 					return
+				}
+				if header.Typeflag == tar.TypeReg {
+					if _, err = io.Copy(entry, tarReader); err != nil {
+						return
+					}
 				}
 			}
 		}
@@ -259,6 +270,29 @@ func WriteManifests(manifests []Manifest, zipWriter *zip.Writer) error {
 	}
 
 	return nil
+}
+
+func MergeManifests(m1, m2 []Manifest) (result []Manifest) {
+	for _, m := range append(append([]Manifest(nil), m1...), m2...) {
+		handled := false
+		for i, e := range result {
+			if e.Config == m.Config {
+				// add missing repo tags
+				for _, rt := range m.RepoTags {
+					if str.IndexOf(e.RepoTags, rt) == -1 {
+						result[i].RepoTags = append(e.RepoTags, rt)
+					}
+				}
+				handled = true
+			}
+		}
+
+		if !handled {
+			result = append(result, Manifest{Config: m.Config, Layers: append([]string(nil), m.Layers...), RepoTags: append([]string(nil), m.RepoTags...)})
+		}
+	}
+
+	return
 }
 
 func createManifestRepositories(manifests []Manifest) (result map[string][]byte, err error) {
@@ -305,6 +339,20 @@ func FilterManifests(manifests []Manifest, tags []string) (result []Manifest) {
 		if len(mm.RepoTags) > 0 {
 			result = append(result, mm)
 		}
+	}
+
+	return
+}
+
+// GetConfig returns the config from the manifest.
+func GetConfig(m Manifest) string {
+	return strings.TrimSuffix(m.Config, dotJSON)
+}
+
+// GetConfigs returns the configs from the manifests.
+func GetConfigs(manifests []Manifest) (result []string) {
+	for _, m := range manifests {
+		result = append(result, GetConfig(m))
 	}
 
 	return
