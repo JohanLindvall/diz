@@ -3,6 +3,7 @@ module github.com/JohanLindvall/diz
 go 1.14
 
 require (
+	github.com/DataDog/zstd v1.4.5
 	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v1.13.1

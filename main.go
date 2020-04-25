@@ -1,13 +1,16 @@
 package main
 
 import (
+	gozip "archive/zip"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	"github.com/DataDog/zstd"
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/imagesource"
 	"github.com/JohanLindvall/diz/str"
@@ -18,15 +21,27 @@ import (
 var (
 	cli     *client.Client
 	fromZip = flag.String("fromzip", "", "set to read Docker tags and images from zip file")
+	level   = flag.Int("level", 5, "Set the compressions level. 0-22")
+)
+
+const (
+	zstdMethod = 1337
 )
 
 func main() {
+	flag.Parse()
+
+	gozip.RegisterCompressor(zstdMethod, func(wr io.Writer) (io.WriteCloser, error) {
+		return zstd.NewWriterLevel(wr, *level), nil
+	})
+	gozip.RegisterDecompressor(zstdMethod, func(r io.Reader) io.ReadCloser {
+		return zstd.NewReader(r)
+	})
 	ccli, err := client.NewEnvClient()
 	if err != nil {
 		panic(err)
 	}
 	cli = ccli
-	flag.Parse()
 
 	args := flag.Args()
 	switch args[0] {
@@ -72,7 +87,7 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				return err
 			}
 			defer out.Close()
-			zipWriter := zip.NewWriter(out)
+			zipWriter := zip.NewWriterMethod(out, zstdMethod)
 
 			// Copy tags and contents from initial image source (if there is one)
 			var copyTags []string
