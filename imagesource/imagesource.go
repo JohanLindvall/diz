@@ -9,7 +9,6 @@ import (
 	"github.com/docker/distribution/context"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/ryanuber/go-glob"
 )
 
 // ImageSource defines an interface for working with Docker image sources
@@ -103,16 +102,7 @@ func (s *dockerImageSource) GlobTags(globTags []string) (result []string, err er
 	}
 
 	for _, image := range images {
-		for _, repoTag := range image.RepoTags {
-			if repoTag != "<none>:<none>" {
-				for _, tag := range globTags {
-					if glob.Glob(tag, repoTag) {
-						result = append(result, repoTag)
-						break
-					}
-				}
-			}
-		}
+		result = append(result, diz.FilterImageTags(image.RepoTags, globTags)...)
 	}
 
 	return

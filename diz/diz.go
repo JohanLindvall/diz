@@ -328,14 +328,7 @@ func createManifestRepositories(manifests []Manifest) (result map[string][]byte,
 // FilterManifests returns a copy of the manifests filtered according to the tags glob
 func FilterManifests(manifests []Manifest, tags []string) (result []Manifest) {
 	for _, m := range manifests {
-		mm := Manifest{Config: m.Config, Layers: m.Layers}
-		for _, repoTag := range m.RepoTags {
-			for _, tag := range tags {
-				if glob.Glob(tag, repoTag) {
-					mm.RepoTags = append(mm.RepoTags, repoTag)
-				}
-			}
-		}
+		mm := Manifest{Config: m.Config, Layers: m.Layers, RepoTags: FilterImageTags(m.RepoTags, tags)}
 		if len(mm.RepoTags) > 0 {
 			result = append(result, mm)
 		}
@@ -355,5 +348,36 @@ func GetConfigs(manifests []Manifest) (result []string) {
 		result = append(result, GetConfig(m))
 	}
 
+	return
+}
+
+// FilterImageTags filters the given image tags according to the glob expressions. A '-' prepending the glob expression means a negative match
+func FilterImageTags(imageTags, globTags []string) (result []string) {
+	for _, repoTag := range imageTags {
+		if repoTag != "<none>:<none>" {
+			first := true
+			match := false
+			for _, globTag := range globTags {
+				neg := false
+				if strings.HasPrefix(globTag, "-") {
+					globTag = globTag[1:]
+					neg = true
+					if first {
+						match = true
+					}
+				}
+
+				if glob.Glob(globTag, repoTag) {
+					match = !neg
+				}
+
+				first = false
+			}
+
+			if match {
+				result = append(result, repoTag)
+			}
+		}
+	}
 	return
 }

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/imagesource"
@@ -99,19 +100,24 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 	}
 }
 
-func restore(tags []string) error {
+func restore(globTags []string) error {
 	if s, err := getImageSource(); err != nil {
 		return err
 	} else {
 		defer s.Close()
-		if rdr, err := s.ReadTar(tags); err != nil {
+		if tags, err := s.GlobTags(globTags); err != nil {
 			return err
 		} else {
-			defer rdr.Close()
-			if response, err := cli.ImageLoad(context.Background(), rdr, false); err != nil {
+			fmt.Printf("Restoring %s\n", strings.Join(tags, ", "))
+			if rdr, err := s.ReadTar(tags); err != nil {
 				return err
 			} else {
-				response.Body.Close()
+				defer rdr.Close()
+				if response, err := cli.ImageLoad(context.Background(), rdr, false); err != nil {
+					return err
+				} else {
+					response.Body.Close()
+				}
 			}
 		}
 	}
