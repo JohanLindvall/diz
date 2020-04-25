@@ -18,6 +18,8 @@ type ImageSource interface {
 	Close() error
 	// CopyToZip copies the image contents to the zip archive, but does not write the manifest.
 	CopyToZip(writer *zip.Writer, tags []string) ([]diz.Manifest, error)
+	// ReadTar returns an io.Reader with a tar archive of the contents
+	ReadTar(tags []string) (io.ReadCloser, error)
 }
 
 // NewZipImageSource returns a zip image source
@@ -76,6 +78,14 @@ func (z *zipImageSource) CopyToZip(writer *zip.Writer, tags []string) (m []diz.M
 	return
 }
 
+func (z *zipImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+	go func() {
+		pw.CloseWithError(z.archive.CopyToTar(pw, diz.FilterManifests(z.archive.Manifests, tags)))
+	}()
+	return pr, nil
+}
+
 // NewDockerImageSource returns a Docker image source
 func NewDockerImageSource(cli *client.Client) (source ImageSource) {
 	source = &dockerImageSource{cli: cli}
@@ -124,6 +134,10 @@ func (s *dockerImageSource) CopyToZip(writer *zip.Writer, tags []string) (m []di
 	return
 }
 
+func (s *dockerImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
+	return s.cli.ImageSave(context.Background(), tags)
+}
+
 // NewNullImageSource returns an image source with no tags and no images
 func NewNullImageSource() (source ImageSource) {
 	source = &nullImageSource{}
@@ -142,5 +156,16 @@ func (s *nullImageSource) Close() (err error) {
 }
 
 func (s *nullImageSource) CopyToZip(writer *zip.Writer, tags []string) (m []diz.Manifest, err error) {
+	return
+}
+
+func (s *nullImageSource) ReadTar(tags []string) (rdr io.ReadCloser, err error) {
+	rdr = s
+	return
+}
+
+func (s *nullImageSource) Read(b []byte) (n int, err error) {
+	n = 0
+	err = io.EOF
 	return
 }

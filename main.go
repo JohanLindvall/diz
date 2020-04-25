@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/JohanLindvall/diz/diz"
@@ -29,34 +30,32 @@ func main() {
 	args := flag.Args()
 	switch args[0] {
 	case "list":
-		list(args[1:])
+		err = list(args[1:])
 	case "create":
-		create(args[1], args[2:])
+		err = create(args[1], args[2:])
 	case "update":
-		// Copy everything from args[1] to out (args[2]), except the tags found in imageSource.
+		err = update(args[1], args[2], args[3:])
+	case "restore":
+		err = restore(args[1:])
 	default:
-		os.Exit(1)
+		err = errors.New("bad command")
+	}
+	if err != nil {
+		panic(err)
 	}
 	os.Exit(0)
-
-	if os.Args[1] == "restore" {
-		file, err := os.Open(os.Args[2])
-		if err != nil {
-			panic(err)
-		}
-		stat, err := file.Stat()
-		if err != nil {
-			panic(err)
-		}
-		err = restore(file, stat.Size(), os.Args[3:])
-		if err != nil {
-			panic(err)
-		}
-	}
 }
 
 func create(fn string, globTags []string) error {
 	return createUpdate(imagesource.NewNullImageSource(), fn, globTags)
+}
+
+func update(initial string, fn string, globTags []string) error {
+	if initialSource, err := getNamedImageSource(initial); err == nil {
+		return createUpdate(initialSource, fn, globTags)
+	} else {
+		return err
+	}
 }
 
 func createUpdate(initial imagesource.ImageSource, fn string, globTags []string) error {
@@ -100,18 +99,24 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 	}
 }
 
-func restore(reader io.ReaderAt, size int64, tags []string) error {
-	archive, err := diz.NewArchive(reader, size)
-	if err != nil {
+func restore(tags []string) error {
+	if s, err := getImageSource(); err != nil {
 		return err
+	} else {
+		defer s.Close()
+		if rdr, err := s.ReadTar(tags); err != nil {
+			return err
+		} else {
+			defer rdr.Close()
+			if response, err := cli.ImageLoad(context.Background(), rdr, false); err != nil {
+				return err
+			} else {
+				response.Body.Close()
+			}
+		}
 	}
 
-	manifest := diz.FilterManifests(archive.Manifests, tags)
-
-	tar, _ := os.Create("c:\\temp\\data.tar")
-	err = archive.CopyToTar(tar, manifest)
-	tar.Close()
-	return err
+	return nil
 }
 
 func list(tags []string) error {
@@ -131,10 +136,14 @@ func list(tags []string) error {
 }
 
 func getImageSource() (imagesource.ImageSource, error) {
-	if *fromZip == "" {
+	return getNamedImageSource(*fromZip)
+}
+
+func getNamedImageSource(fn string) (imagesource.ImageSource, error) {
+	if fn == "" {
 		return imagesource.NewDockerImageSource(cli), nil
 	} else {
-		return imagesource.NewZipImageSource(*fromZip)
+		return imagesource.NewZipImageSource(fn)
 	}
 }
 

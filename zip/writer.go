@@ -3,19 +3,22 @@ package zip
 import (
 	gozip "archive/zip"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 )
 
 // Writer holds the data for writing to a zip archive, ignoring duplicate file names
 type Writer struct {
 	io.Writer
-	writer *gozip.Writer
-	seen   map[string]bool
+	writer  *gozip.Writer
+	seen    map[string]bool
+	verbose bool
 }
 
 // NewWriter returns a new writer
 func NewWriter(w io.Writer) *Writer {
-	return &Writer{writer: gozip.NewWriter(w), seen: make(map[string]bool, 0)}
+	return &Writer{writer: gozip.NewWriter(w), seen: make(map[string]bool, 0), verbose: w != os.Stdout}
 }
 
 // Exists returns true if the given file exists in the archive
@@ -29,6 +32,9 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 		return nil, errors.New("file exists")
 	}
 	w.seen[name] = true
+	if w.verbose {
+		fmt.Printf("Writing '%s'\n", name)
+	}
 	return w.writer.Create(name)
 }
 
@@ -38,6 +44,9 @@ func (w *Writer) CreateHeader(fh *gozip.FileHeader) (io.Writer, error) {
 		return nil, errors.New("file exists")
 	}
 	w.seen[fh.Name] = true
+	if w.verbose {
+		fmt.Printf("Writing '%s'\n", fh.Name)
+	}
 	return w.writer.CreateHeader(fh)
 }
 
