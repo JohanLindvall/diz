@@ -53,6 +53,8 @@ func main() {
 		err = update(args[1], args[2], args[3:])
 	case "restore":
 		err = restore(args[1:])
+	case "serve":
+		err = serve(args[1])
 	default:
 		err = errors.New("bad command")
 	}

@@ -2,9 +2,9 @@ package diz
 
 import (
 	"archive/tar"
-	gozip "archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"strings"
@@ -34,14 +34,14 @@ type Manifest struct {
 // Archive holds the data for reading a diz zip archive
 type Archive struct {
 	Manifests []Manifest
-	reader    *gozip.Reader
+	reader    *zip.Reader
 }
 
 type repositories map[string]map[string]string
 
 // NewArchive creates a new archive from the reader
 func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
-	zipReader, err := gozip.NewReader(reader, size)
+	zipReader, err := zip.NewReader(reader, size)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,14 @@ func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
 	return &Archive{Manifests: manifests, reader: zipReader}, nil
 }
 
-func getFile(zipReader *gozip.Reader, name string) *gozip.File {
+func (a *Archive) GetUncompressedSize(name string) int64 {
+	if f := getDizFile(a.reader, name); f != nil {
+		return int64(f.UncompressedSize64)
+	}
+	return -1
+}
+
+func getDizFile(zipReader *zip.Reader, name string) *zip.File {
 	name = dizPrefix + name
 	for _, file := range zipReader.File {
 		if file.Name == name {
@@ -65,8 +72,8 @@ func getFile(zipReader *gozip.Reader, name string) *gozip.File {
 	return nil
 }
 
-func readManifest(zipReader *gozip.Reader) (manifests []Manifest, err error) {
-	f := getFile(zipReader, manifestJSON)
+func readManifest(zipReader *zip.Reader) (manifests []Manifest, err error) {
+	f := getDizFile(zipReader, manifestJSON)
 	if f == nil {
 		return
 	}
@@ -88,7 +95,7 @@ func readManifest(zipReader *gozip.Reader) (manifests []Manifest, err error) {
 	return
 }
 
-type fileHandler func(zf *gozip.File, fn string, contents []byte) error
+type fileHandler func(zf *zip.File, fn string, contents []byte) error
 
 func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForeign, includeManifests bool) (err error) {
 	include := make(map[string]bool, 0)
@@ -146,7 +153,7 @@ func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForei
 
 // CopyToZip copies the contents for the archive, selected by manifests, to the zip writer. The manifest itself is not included
 func (a *Archive) CopyToZip(zipWriter *zip.Writer, manifests []Manifest) (err error) {
-	return a.copyTo(func(zf *gozip.File, fn string, contents []byte) (err error) {
+	return a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
 		var writer io.Writer
 		if zf == nil {
 			if !zipWriter.Exists(fn) {
@@ -170,7 +177,7 @@ func (a *Archive) CopyToZip(zipWriter *zip.Writer, manifests []Manifest) (err er
 	}, manifests, true, false)
 }
 
-func copyZipFile(writer io.Writer, zf *gozip.File) (err error) {
+func copyZipFile(writer io.Writer, zf *zip.File) (err error) {
 	var readCloser io.ReadCloser
 	if readCloser, err = zf.Open(); err != nil {
 		return
@@ -186,7 +193,7 @@ func copyZipFile(writer io.Writer, zf *gozip.File) (err error) {
 func (a *Archive) CopyToTar(writer io.Writer, manifests []Manifest) (err error) {
 	tarWriter := tar.NewWriter(writer)
 
-	err = a.copyTo(func(zf *gozip.File, fn string, contents []byte) (err error) {
+	err = a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
 		var size int64
 		if zf == nil {
 			size = int64(len(contents))
@@ -381,3 +388,66 @@ func FilterImageTags(imageTags, globTags []string) (result []string) {
 	}
 	return
 }
+
+func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) {
+	manifests, err := readManifest(a.reader)
+	if err == nil {
+		for _, m := range manifests {
+			for _, rt := range m.RepoTags {
+				if repoTag == rt {
+					result := RegistryManifest{}
+					result.SchemaVersion = 2
+					result.MediaType = manifestMediaType
+					result.Config.MediaType = configMediaType
+					result.Config.Size = a.GetUncompressedSize(m.Config)
+					result.Config.Digest = "sha256:" + strings.TrimSuffix(m.Config, dotJSON)
+					for _, l := range m.Layers {
+						result.Layers = append(result.Layers, RegistryLayer{MediaType: layerMediaType, Size: a.GetUncompressedSize(l), Digest: "sha256:" + a.reader.GetHash(dizPrefix+l)})
+					}
+					return result, nil
+				}
+			}
+		}
+	}
+
+	return RegistryManifest{}, err
+}
+
+func (z *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
+	if f, err := z.reader.OpenFileByHash(layerHash); f != nil && err == nil {
+		_, err = io.Copy(writer, f)
+		er := f.Close()
+		if err == nil {
+			err = er
+		}
+		return err
+	} else {
+		if err == nil {
+			err = errors.New("not found")
+		}
+		return err
+	}
+}
+
+type RegistryManifest struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	MediaType     string `json:"mediaType"`
+	Config        struct {
+		MediaType string `json:"mediaType"`
+		Size      int64  `json:"size"`
+		Digest    string `json:"digest"`
+	} `json:"config"`
+	Layers []RegistryLayer `json:"layers"`
+}
+
+type RegistryLayer struct {
+	MediaType string `json:"mediaType"`
+	Size      int64  `json:"size"`
+	Digest    string `json:"digest"`
+}
+
+const (
+	manifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	configMediaType   = "application/vnd.docker.container.image.v1+json"
+	layerMediaType    = "application/vnd.docker.image.rootfs.diff.tar"
+)

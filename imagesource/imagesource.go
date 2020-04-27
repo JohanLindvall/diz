@@ -22,8 +22,8 @@ type ImageSource interface {
 }
 
 // NewZipImageSource returns a zip image source
-func NewZipImageSource(zip string) (source ImageSource, err error) {
-	var z zipImageSource
+func NewZipImageSource(zip string) (source *ZipImageSource, err error) {
+	var z ZipImageSource
 	if z.file, err = os.Open(os.Args[2]); err != nil {
 		return
 	}
@@ -41,12 +41,12 @@ func NewZipImageSource(zip string) (source ImageSource, err error) {
 	return
 }
 
-type zipImageSource struct {
+type ZipImageSource struct {
 	file    *os.File
 	archive *diz.Archive
 }
 
-func (z *zipImageSource) GlobTags(tags []string) (result []string, err error) {
+func (z *ZipImageSource) GlobTags(tags []string) (result []string, err error) {
 	for _, m := range diz.FilterManifests(z.archive.Manifests, tags) {
 		for _, t := range m.RepoTags {
 			result = append(result, t)
@@ -56,7 +56,7 @@ func (z *zipImageSource) GlobTags(tags []string) (result []string, err error) {
 	return
 }
 
-func (z *zipImageSource) Close() error {
+func (z *ZipImageSource) Close() error {
 	return z.file.Close()
 }
 
@@ -70,19 +70,27 @@ func stringInSlice(s string, ss []string) bool {
 	return false
 }
 
-func (z *zipImageSource) CopyToZip(writer *zip.Writer, tags []string) (m []diz.Manifest, err error) {
+func (z *ZipImageSource) CopyToZip(writer *zip.Writer, tags []string) (m []diz.Manifest, err error) {
 	m = diz.FilterManifests(z.archive.Manifests, tags)
 	err = z.archive.CopyToZip(writer, m)
 
 	return
 }
 
-func (z *zipImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
+func (z *ZipImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		pw.CloseWithError(z.archive.CopyToTar(pw, diz.FilterManifests(z.archive.Manifests, tags)))
 	}()
 	return pr, nil
+}
+
+func (z *ZipImageSource) GetRegistryManifest(repoTag string) (diz.RegistryManifest, error) {
+	return z.archive.GetRegistryManifest(repoTag)
+}
+
+func (z *ZipImageSource) WriteFileByHash(writer io.Writer, layer string) error {
+	return z.archive.WriteFileByHash(writer, layer)
 }
 
 // NewDockerImageSource returns a Docker image source

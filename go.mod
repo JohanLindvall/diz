@@ -14,4 +14,5 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0
 	golang.org/x/net v0.0.0-20200421231249-e086a090c8fd // indirect
+	gopkg.in/square/go-jose.v2 v2.5.0
 )
