@@ -390,27 +390,31 @@ func FilterImageTags(imageTags, globTags []string) (result []string) {
 }
 
 func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) {
-	manifests, err := readManifest(a.reader)
-	if err == nil {
-		for _, m := range manifests {
-			for _, rt := range m.RepoTags {
-				if repoTag == rt {
-					result := RegistryManifest{}
-					result.SchemaVersion = 2
-					result.MediaType = manifestMediaType
-					result.Config.MediaType = configMediaType
-					result.Config.Size = a.GetUncompressedSize(m.Config)
-					result.Config.Digest = "sha256:" + strings.TrimSuffix(m.Config, dotJSON)
-					for _, l := range m.Layers {
-						result.Layers = append(result.Layers, RegistryLayer{MediaType: layerMediaType, Size: a.GetUncompressedSize(l), Digest: "sha256:" + a.reader.GetHash(dizPrefix+l)})
-					}
-					return result, nil
+	for _, m := range a.Manifests {
+		for _, rt := range m.RepoTags {
+			if removeRegistry(repoTag) == rt {
+				result := RegistryManifest{}
+				result.SchemaVersion = 2
+				result.MediaType = manifestMediaType
+				result.Config.MediaType = configMediaType
+				result.Config.Size = a.GetUncompressedSize(m.Config)
+				result.Config.Digest = "sha256:" + strings.TrimSuffix(m.Config, dotJSON)
+				for _, l := range m.Layers {
+					result.Layers = append(result.Layers, RegistryLayer{MediaType: layerMediaType, Size: a.GetUncompressedSize(l), Digest: "sha256:" + a.reader.GetHash(dizPrefix+l)})
 				}
+				return result, nil
 			}
 		}
 	}
 
-	return RegistryManifest{}, err
+	return RegistryManifest{}, nil
+}
+
+func removeRegistry(tag string) string {
+	if i := bytes.IndexByte([]byte(tag), '/'); i != -1 {
+		return string([]byte(tag)[i+1:])
+	}
+	return tag
 }
 
 func (z *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {

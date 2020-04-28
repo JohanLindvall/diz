@@ -24,7 +24,7 @@ type ImageSource interface {
 // NewZipImageSource returns a zip image source
 func NewZipImageSource(zip string) (source *ZipImageSource, err error) {
 	var z ZipImageSource
-	if z.file, err = os.Open(os.Args[2]); err != nil {
+	if z.file, err = os.Open(zip); err != nil {
 		return
 	}
 	var fi os.FileInfo
@@ -91,6 +91,10 @@ func (z *ZipImageSource) GetRegistryManifest(repoTag string) (diz.RegistryManife
 
 func (z *ZipImageSource) WriteFileByHash(writer io.Writer, layer string) error {
 	return z.archive.WriteFileByHash(writer, layer)
+}
+
+func (z *ZipImageSource) Manifests() []diz.Manifest {
+	return z.archive.Manifests
 }
 
 // NewDockerImageSource returns a Docker image source

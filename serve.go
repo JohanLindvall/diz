@@ -11,8 +11,8 @@ import (
 	"github.com/JohanLindvall/diz/imagesource"
 )
 
-func serve(address string) (err error) {
-	is, err := imagesource.NewZipImageSource(*fromZip)
+func serve(zip string) (err error) {
+	is, err := imagesource.NewZipImageSource(zip)
 	if err != nil {
 		return err
 	}
@@ -29,6 +29,11 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v2/" {
 		w.WriteHeader(http.StatusOK)
 		return
+	} else if r.URL.Path == "/v2/manifests" {
+		if js, err := json.MarshalIndent(s.is.Manifests(), "", "  "); err == nil {
+			w.Write(js)
+			return
+		}
 	} else if match := manifestRe.FindStringSubmatch(r.URL.Path); match != nil {
 		repoTag := match[1] + ":" + match[2]
 		repoManifest, err := s.is.GetRegistryManifest(repoTag)
@@ -49,7 +54,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func sendDigestResponse(w http.ResponseWriter, m diz.RegistryManifest) (err error) {
 	var js []byte
-	if js, err = json.Marshal(m); err == nil {
+	if js, err = json.MarshalIndent(m, "", "  "); err == nil {
 		w.Header().Set("Docker-Content-Digest", fmt.Sprintf("sha256:%x", sha256.Sum256(js)))
 		w.Header().Set("Content-Type", m.MediaType)
 		w.Write(js)
