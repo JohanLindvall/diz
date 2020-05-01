@@ -1,7 +1,7 @@
 package main
 
 import (
-	gozip "archive/zip"
+	"archive/zip"
 	"context"
 	"errors"
 	"flag"
@@ -12,15 +12,16 @@ import (
 
 	"github.com/DataDog/zstd"
 	"github.com/JohanLindvall/diz/diz"
+	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/imagesource"
 	"github.com/JohanLindvall/diz/str"
-	"github.com/JohanLindvall/diz/zip"
 	"github.com/docker/docker/client"
 )
 
 var (
 	cli     *client.Client
 	fromZip = flag.String("fromzip", "", "set to read Docker tags and images from zip file")
+	pull    = flag.Bool("pull", false, "If set, pulls images from docker registry")
 	level   = flag.Int("level", 5, "Set the compressions level. 0-22")
 )
 
@@ -31,10 +32,10 @@ const (
 func main() {
 	flag.Parse()
 
-	gozip.RegisterCompressor(zstdMethod, func(wr io.Writer) (io.WriteCloser, error) {
+	zip.RegisterCompressor(zstdMethod, func(wr io.Writer) (io.WriteCloser, error) {
 		return zstd.NewWriterLevel(wr, *level), nil
 	})
-	gozip.RegisterDecompressor(zstdMethod, func(r io.Reader) io.ReadCloser {
+	zip.RegisterDecompressor(zstdMethod, func(r io.Reader) io.ReadCloser {
 		return zstd.NewReader(r)
 	})
 	ccli, err := client.NewEnvClient()
@@ -89,7 +90,7 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				return err
 			}
 			defer out.Close()
-			zipWriter := zip.NewWriterMethod(out, zstdMethod)
+			zipWriter := hashzip.NewWriterMethod(out, zstdMethod)
 
 			// Copy tags and contents from initial image source (if there is one)
 			var copyTags []string
@@ -164,7 +165,7 @@ func getImageSource() (imagesource.ImageSource, error) {
 
 func getNamedImageSource(fn string) (imagesource.ImageSource, error) {
 	if fn == "" {
-		return imagesource.NewDockerImageSource(cli), nil
+		return imagesource.NewDockerImageSource(cli, *pull), nil
 	} else {
 		return imagesource.NewZipImageSource(fn)
 	}

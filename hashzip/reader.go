@@ -1,31 +1,31 @@
-package zip
+package hashzip
 
 import (
 	"io"
 	"io/ioutil"
 
-	gozip "archive/zip"
+	"archive/zip"
 
 	"gopkg.in/square/go-jose.v2/json"
 )
 
 type Reader struct {
-	reader                *gozip.Reader
+	reader                *zip.Reader
 	fileHashes, hashFiles map[string]string
 	File                  []*File
 }
 
 type File struct {
-	file               *gozip.File
+	file               *zip.File
 	Name               string
 	UncompressedSize64 uint64
-	FileHeader         gozip.FileHeader
+	FileHeader         zip.FileHeader
 }
 
 // NewReader returns a new Reader reading from r, which is assumed to
 // have the given size in bytes.
 func NewReader(r io.ReaderAt, size int64) (*Reader, error) {
-	rdr, err := gozip.NewReader(r, size)
+	rdr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, err
 	}

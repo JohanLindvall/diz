@@ -1,7 +1,7 @@
-package zip
+package hashzip
 
 import (
-	gozip "archive/zip"
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -15,7 +15,7 @@ import (
 // Writer holds the data for writing to a zip archive, ignoring duplicate file names
 type Writer struct {
 	io.Writer
-	writer  *gozip.Writer
+	writer  *zip.Writer
 	verbose bool
 	method  uint16
 	h       hash.Hash
@@ -25,12 +25,12 @@ type Writer struct {
 
 // NewWriter returns a new writer
 func NewWriter(w io.Writer) *Writer {
-	return NewWriterMethod(w, gozip.Deflate)
+	return NewWriterMethod(w, zip.Deflate)
 }
 
 // NewWriterMethod returns a new writer using a custom method
 func NewWriterMethod(w io.Writer, method uint16) *Writer {
-	return &Writer{writer: gozip.NewWriter(w), verbose: w != os.Stdout, method: method, hashes: make(map[string]string, 0)}
+	return &Writer{writer: zip.NewWriter(w), verbose: w != os.Stdout, method: method, hashes: make(map[string]string, 0)}
 }
 
 // Exists returns true if the given file exists in the archive
@@ -40,11 +40,11 @@ func (w *Writer) Exists(name string) bool {
 
 // Create creates a new entry and returns a writer
 func (w *Writer) Create(name string) (io.Writer, error) {
-	return w.CreateHeader(&gozip.FileHeader{Name: name, Method: w.method})
+	return w.CreateHeader(&zip.FileHeader{Name: name, Method: w.method})
 }
 
 // CreateHeader creates a new header entry and returns a writer
-func (w *Writer) CreateHeader(fh *gozip.FileHeader) (io.Writer, error) {
+func (w *Writer) CreateHeader(fh *zip.FileHeader) (io.Writer, error) {
 	w.end()
 	copy := *fh
 	copy.Method = w.method
@@ -73,7 +73,7 @@ func (w *Writer) end() {
 // Close closes the zip writer
 func (w *Writer) Close() error {
 	w.end()
-	if wr, err := w.writer.CreateHeader(&gozip.FileHeader{Name: ".hashes", Method: w.method}); err == nil {
+	if wr, err := w.writer.CreateHeader(&zip.FileHeader{Name: ".hashes", Method: w.method}); err == nil {
 		data, _ := json.Marshal(w.hashes)
 		io.Copy(wr, bytes.NewReader(data))
 	}

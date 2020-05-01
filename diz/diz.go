@@ -9,8 +9,9 @@ import (
 	"io/ioutil"
 	"strings"
 
+	"github.com/JohanLindvall/diz/dockerref"
+	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/str"
-	"github.com/JohanLindvall/diz/zip"
 
 	"github.com/ryanuber/go-glob"
 )
@@ -34,14 +35,14 @@ type Manifest struct {
 // Archive holds the data for reading a diz zip archive
 type Archive struct {
 	Manifests []Manifest
-	reader    *zip.Reader
+	reader    *hashzip.Reader
 }
 
 type repositories map[string]map[string]string
 
 // NewArchive creates a new archive from the reader
 func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
-	zipReader, err := zip.NewReader(reader, size)
+	zipReader, err := hashzip.NewReader(reader, size)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +62,7 @@ func (a *Archive) GetUncompressedSize(name string) int64 {
 	return -1
 }
 
-func getDizFile(zipReader *zip.Reader, name string) *zip.File {
+func getDizFile(zipReader *hashzip.Reader, name string) *hashzip.File {
 	name = dizPrefix + name
 	for _, file := range zipReader.File {
 		if file.Name == name {
@@ -72,7 +73,7 @@ func getDizFile(zipReader *zip.Reader, name string) *zip.File {
 	return nil
 }
 
-func readManifest(zipReader *zip.Reader) (manifests []Manifest, err error) {
+func readManifest(zipReader *hashzip.Reader) (manifests []Manifest, err error) {
 	f := getDizFile(zipReader, manifestJSON)
 	if f == nil {
 		return
@@ -95,7 +96,7 @@ func readManifest(zipReader *zip.Reader) (manifests []Manifest, err error) {
 	return
 }
 
-type fileHandler func(zf *zip.File, fn string, contents []byte) error
+type fileHandler func(zf *hashzip.File, fn string, contents []byte) error
 
 func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForeign, includeManifests bool) (err error) {
 	include := make(map[string]bool, 0)
@@ -152,8 +153,8 @@ func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForei
 }
 
 // CopyToZip copies the contents for the archive, selected by manifests, to the zip writer. The manifest itself is not included
-func (a *Archive) CopyToZip(zipWriter *zip.Writer, manifests []Manifest) (err error) {
-	return a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
+func (a *Archive) CopyToZip(zipWriter *hashzip.Writer, manifests []Manifest) (err error) {
+	return a.copyTo(func(zf *hashzip.File, fn string, contents []byte) (err error) {
 		var writer io.Writer
 		if zf == nil {
 			if !zipWriter.Exists(fn) {
@@ -177,7 +178,7 @@ func (a *Archive) CopyToZip(zipWriter *zip.Writer, manifests []Manifest) (err er
 	}, manifests, true, false)
 }
 
-func copyZipFile(writer io.Writer, zf *zip.File) (err error) {
+func copyZipFile(writer io.Writer, zf *hashzip.File) (err error) {
 	var readCloser io.ReadCloser
 	if readCloser, err = zf.Open(); err != nil {
 		return
@@ -193,7 +194,7 @@ func copyZipFile(writer io.Writer, zf *zip.File) (err error) {
 func (a *Archive) CopyToTar(writer io.Writer, manifests []Manifest) (err error) {
 	tarWriter := tar.NewWriter(writer)
 
-	err = a.copyTo(func(zf *zip.File, fn string, contents []byte) (err error) {
+	err = a.copyTo(func(zf *hashzip.File, fn string, contents []byte) (err error) {
 		var size int64
 		if zf == nil {
 			size = int64(len(contents))
@@ -223,7 +224,7 @@ func (a *Archive) CopyToTar(writer io.Writer, manifests []Manifest) (err error) 
 }
 
 // CopyFromTar copies the contents of the tar archive to the zip writer. The manifest is not copied
-func CopyFromTar(rdr io.Reader, zipWriter *zip.Writer) (manifests []Manifest, err error) {
+func CopyFromTar(rdr io.Reader, zipWriter *hashzip.Writer) (manifests []Manifest, err error) {
 	tarReader := tar.NewReader(rdr)
 
 	for {
@@ -261,7 +262,7 @@ func CopyFromTar(rdr io.Reader, zipWriter *zip.Writer) (manifests []Manifest, er
 }
 
 // WriteManifests writes the manifests to the zip writer.
-func WriteManifests(manifests []Manifest, zipWriter *zip.Writer) error {
+func WriteManifests(manifests []Manifest, zipWriter *hashzip.Writer) error {
 	if m, err := createManifestRepositories(manifests); err != nil {
 		return err
 	} else {
@@ -392,7 +393,7 @@ func FilterImageTags(imageTags, globTags []string) (result []string) {
 func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) {
 	for _, m := range a.Manifests {
 		for _, rt := range m.RepoTags {
-			if removeRegistry(repoTag) == rt {
+			if dockerref.FamiliarReference(repoTag) == rt {
 				result := RegistryManifest{}
 				result.SchemaVersion = 2
 				result.MediaType = manifestMediaType
@@ -408,13 +409,6 @@ func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) 
 	}
 
 	return RegistryManifest{}, nil
-}
-
-func removeRegistry(tag string) string {
-	if i := bytes.IndexByte([]byte(tag), '/'); i != -1 {
-		return string([]byte(tag)[i+1:])
-	}
-	return tag
 }
 
 func (z *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
