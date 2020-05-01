@@ -2,12 +2,14 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/DataDog/zstd"
@@ -20,7 +22,8 @@ import (
 
 var (
 	cli     *client.Client
-	fromZip = flag.String("fromzip", "", "set to read Docker tags and images from zip file")
+	fromZip = flag.String("fromzip", "", "Set to read Docker tags and images from zip file")
+	tagFile = flag.String("tagfile", "", "Set to load tags from file")
 	pull    = flag.Bool("pull", false, "If set, pulls images from docker registry")
 	level   = flag.Int("level", 5, "Set the compressions level. 0-22")
 )
@@ -47,13 +50,13 @@ func main() {
 	args := flag.Args()
 	switch args[0] {
 	case "list":
-		err = list(args[1:])
+		err = list(getTags(args[1:]))
 	case "create":
-		err = create(args[1], args[2:])
+		err = create(args[1], getTags(args[2:]))
 	case "update":
-		err = update(args[1], args[2], args[3:])
+		err = update(args[1], args[2], getTags(args[3:]))
 	case "restore":
-		err = restore(args[1:])
+		err = restore(getTags(args[1:]))
 	case "serve":
 		err = serve(args[1])
 	default:
@@ -179,4 +182,29 @@ func getOutFile(fn string) (out *os.File, err error) {
 	}
 
 	return
+}
+
+var (
+	tagRe = regexp.MustCompile("[a-zA-Z0-9/:._-]+")
+)
+
+func getTags(tags []string) []string {
+	if *tagFile != "" {
+		if f, err := os.Open(*tagFile); err == nil {
+			for s := bufio.NewScanner(f); s.Scan(); {
+				ln := s.Text()
+				if i := strings.Index(ln, "#"); i != -1 {
+					ln = ln[:i]
+				}
+				if split := strings.SplitN(ln, "=", 2); len(split) == 2 {
+					ln = split[1]
+				}
+				if match := tagRe.FindString(ln); match != "" {
+					tags = append(tags, match)
+				}
+			}
+			f.Close()
+		}
+	}
+	return tags
 }

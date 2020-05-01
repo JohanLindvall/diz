@@ -16,15 +16,15 @@ func NormalizeReference(tag string) string {
 	if match == nil {
 		return tag
 	}
-	if match[2] == "" {
-		match[2] = dockerIoSlash
+	if match[1] == "" {
+		match[1] = dockerIoSlash
 	}
-	if match[2] == dockerIoSlash {
+	if match[1] == dockerIoSlash {
 		if strings.Index(match[6], "/") == -1 {
 			match[6] = librarySlash + match[6]
 		}
 	}
-	return match[2] + match[6]
+	return match[1] + match[6]
 }
 
 func FamiliarReference(reference string) string {
@@ -32,7 +32,7 @@ func FamiliarReference(reference string) string {
 	if match == nil {
 		return reference
 	}
-	if match[2] == "" || match[2] == dockerIoSlash && strings.HasPrefix(match[6], librarySlash) {
+	if match[1] == "" || match[1] == dockerIoSlash && strings.HasPrefix(match[6], librarySlash) {
 		match[6] = string([]byte(match[6])[len(librarySlash):])
 	}
 	return match[6]

@@ -1,12 +1,17 @@
 package imagesource
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"strings"
 
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
+	"github.com/JohanLindvall/diz/str"
 	"github.com/docker/distribution/context"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -28,6 +33,12 @@ func (s *dockerImageSource) GlobTags(globTags []string) (result []string, err er
 		result = globTags
 		return
 	}
+	result, err = s.globTags(globTags)
+
+	return
+}
+
+func (s *dockerImageSource) globTags(globTags []string) (result []string, err error) {
 	var images []types.ImageSummary
 	if images, err = s.cli.ImageList(context.Background(), types.ImageListOptions{}); err != nil {
 		return
@@ -68,9 +79,21 @@ func (s *dockerImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
 
 func (s *dockerImageSource) pullIfNeeded(tags []string) error {
 	if s.pull {
-		for _, tag := range tags {
+		existing, err := s.globTags(tags)
+		if err != nil {
+			return err
+		}
+		for _, tag := range str.RemoveSlice(tags, existing) {
 			normalized := dockerref.NormalizeReference(tag)
-			reader, err := s.cli.ImagePull(context.Background(), normalized, types.ImagePullOptions{})
+			ipo := types.ImagePullOptions{}
+			user, pass, err := getCredentials(strings.SplitN(normalized, "/", -1)[0])
+			if err == nil {
+				b, _ := json.Marshal(&types.AuthConfig{Username: user, Password: pass})
+				ipo.RegistryAuth = base64.URLEncoding.EncodeToString(b)
+			}
+
+			fmt.Printf("Pulling '%s'\n", normalized)
+			reader, err := s.cli.ImagePull(context.Background(), normalized, ipo)
 			if err != nil {
 				return err
 			}
