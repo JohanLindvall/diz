@@ -1,17 +1,15 @@
 package imagesource
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"strings"
 
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/str"
+	"github.com/JohanLindvall/diz/util"
 	"github.com/docker/distribution/context"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -85,21 +83,12 @@ func (s *dockerImageSource) pullIfNeeded(tags []string) error {
 		}
 		for _, tag := range str.RemoveSlice(tags, existing) {
 			normalized := dockerref.NormalizeReference(tag)
-			ipo := types.ImagePullOptions{}
-			user, pass, err := getCredentials(strings.SplitN(normalized, "/", -1)[0])
-			if err == nil {
-				b, _ := json.Marshal(&types.AuthConfig{Username: user, Password: pass})
-				ipo.RegistryAuth = base64.URLEncoding.EncodeToString(b)
-			}
-
 			fmt.Printf("Pulling '%s'\n", normalized)
-			reader, err := s.cli.ImagePull(context.Background(), normalized, ipo)
+			reader, err := s.cli.ImagePull(context.Background(), normalized, types.ImagePullOptions{RegistryAuth: getCredentials(dockerref.GetRepository(normalized))})
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(ioutil.Discard, reader)
-			reader.Close()
-			if err != nil {
+			if _, err = util.CopyAndClose(ioutil.Discard, reader); err != nil {
 				return err
 			}
 		}

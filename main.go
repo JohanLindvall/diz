@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/JohanLindvall/diz/imagesource"
 	"github.com/JohanLindvall/diz/str"
 	"github.com/docker/docker/client"
-	"github.com/klauspost/compress/zstd"
 )
 
 var (
@@ -25,23 +23,12 @@ var (
 	fromZip = flag.String("fromzip", "", "Set to read Docker tags and images from zip file")
 	tagFile = flag.String("tagfile", "", "Set to load tags from file")
 	pull    = flag.Bool("pull", false, "If set, pulls images from docker registry")
-	level   = flag.Int("level", 5, "Set the compressions level. 0-22")
-)
-
-const (
-	zstdMethod = 1337
+	store   = flag.Bool("store", false, "If set, files are stored uncompressed")
 )
 
 func main() {
 	flag.Parse()
 
-	zip.RegisterCompressor(zstdMethod, func(w io.Writer) (io.WriteCloser, error) {
-		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(*level)))
-	})
-	zip.RegisterDecompressor(zstdMethod, func(r io.Reader) io.ReadCloser {
-		zr, _ := zstd.NewReader(r)
-		return zr.IOReadCloser()
-	})
 	ccli, err := client.NewEnvClient()
 	if err != nil {
 		panic(err)
@@ -94,8 +81,8 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				return err
 			}
 			defer out.Close()
-			method := uint16(zstdMethod)
-			if *level == 0 {
+			method := uint16(zip.Deflate)
+			if *store {
 				method = 0
 			}
 			zipWriter := hashzip.NewWriterMethod(out, method)

@@ -12,19 +12,8 @@ var (
 )
 
 func NormalizeReference(tag string) string {
-	match := refRe.FindStringSubmatch(tag)
-	if match == nil {
-		return tag
-	}
-	if match[1] == "" {
-		match[1] = dockerIoSlash
-	}
-	if match[1] == dockerIoSlash {
-		if strings.Index(match[6], "/") == -1 {
-			match[6] = librarySlash + match[6]
-		}
-	}
-	return match[1] + match[6]
+	r, t := splitRepoTag(tag)
+	return r + t
 }
 
 func FamiliarReference(reference string) string {
@@ -36,4 +25,29 @@ func FamiliarReference(reference string) string {
 		match[6] = string([]byte(match[6])[len(librarySlash):])
 	}
 	return match[6]
+}
+
+func GetRepository(tag string) string {
+	if r, _ := splitRepoTag(tag); r != "" {
+		return strings.TrimSuffix(r, "/")
+	}
+
+	return ""
+}
+
+func splitRepoTag(tag string) (string, string) {
+	match := refRe.FindStringSubmatch(tag)
+	if match == nil {
+		return "", tag
+	}
+	if match[1] == "" {
+		match[1] = dockerIoSlash
+	}
+	if match[1] == dockerIoSlash {
+		if strings.Index(match[6], "/") == -1 {
+			match[6] = librarySlash + match[6]
+		}
+	}
+
+	return match[1], match[6]
 }
