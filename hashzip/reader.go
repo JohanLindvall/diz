@@ -6,7 +6,7 @@ import (
 
 	"archive/zip"
 
-	"gopkg.in/square/go-jose.v2/json"
+	"encoding/json"
 )
 
 type Reader struct {

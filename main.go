@@ -12,12 +12,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/DataDog/zstd"
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/imagesource"
 	"github.com/JohanLindvall/diz/str"
 	"github.com/docker/docker/client"
+	"github.com/klauspost/compress/zstd"
 )
 
 var (
@@ -35,11 +35,12 @@ const (
 func main() {
 	flag.Parse()
 
-	zip.RegisterCompressor(zstdMethod, func(wr io.Writer) (io.WriteCloser, error) {
-		return zstd.NewWriterLevel(wr, *level), nil
+	zip.RegisterCompressor(zstdMethod, func(w io.Writer) (io.WriteCloser, error) {
+		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(*level)))
 	})
 	zip.RegisterDecompressor(zstdMethod, func(r io.Reader) io.ReadCloser {
-		return zstd.NewReader(r)
+		zr, _ := zstd.NewReader(r)
+		return zr.IOReadCloser()
 	})
 	ccli, err := client.NewEnvClient()
 	if err != nil {
