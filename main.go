@@ -62,7 +62,11 @@ func create(fn string, globTags []string) error {
 
 func update(initial string, fn string, globTags []string) error {
 	if initialSource, err := getNamedImageSource(initial); err == nil {
-		return createUpdate(initialSource, fn, globTags)
+		err = createUpdate(initialSource, fn, globTags)
+		if er := initialSource.Close(); err == nil {
+			err = er
+		}
+		return err
 	} else {
 		return err
 	}
@@ -94,9 +98,9 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 			}
 
 			// Remove tags to be updated
-			copyTags = str.RemoveSlice(copyTags, globTags)
+			copyTags = str.RemoveSlice(copyTags, tags)
 			var m1, m2 []diz.Manifest
-			if m1, err = s.CopyToZip(zipWriter, copyTags); err != nil {
+			if m1, err = initial.CopyToZip(zipWriter, copyTags); err != nil {
 				return err
 			}
 

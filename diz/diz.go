@@ -184,10 +184,7 @@ func copyZipFile(writer io.Writer, zf *hashzip.File) (err error) {
 	if readCloser, err = zf.Open(); err != nil {
 		return
 	}
-	_, err = io.Copy(writer, readCloser)
-	if er := readCloser.Close(); err == nil {
-		err = er
-	}
+	_, err = util.CopyAndClose(writer, readCloser)
 	return
 }
 
@@ -197,12 +194,14 @@ func (a *Archive) CopyToTar(writer io.Writer, manifests []Manifest) (err error) 
 
 	err = a.copyTo(func(zf *hashzip.File, fn string, contents []byte) (err error) {
 		var size int64
+		mode := int64(0644)
 		if zf == nil {
 			size = int64(len(contents))
 		} else {
 			size = int64(zf.UncompressedSize64)
+			mode = int64(zf.FileHeader.Mode())
 		}
-		if err = tarWriter.WriteHeader(&tar.Header{Name: fn, Size: size, Typeflag: tar.TypeRegA, Mode: 0644}); err != nil {
+		if err = tarWriter.WriteHeader(&tar.Header{Name: fn, Size: size, Typeflag: tar.TypeRegA, Mode: mode}); err != nil {
 			return
 		}
 		if zf == nil {
@@ -437,7 +436,7 @@ func (a *Archive) Read(path string) (read io.ReadCloser, err error) {
 			i := strings.LastIndex(path[:len(path)-1], "/") + 1
 			for _, item := range a.reader.File {
 				if strings.HasPrefix(item.Name, path) {
-					if err = tw.WriteHeader(&tar.Header{Name: item.Name[i:], Size: int64(item.UncompressedSize64), Typeflag: tar.TypeRegA, Mode: 0644}); err != nil {
+					if err = tw.WriteHeader(&tar.Header{Name: item.Name[i:], Size: int64(item.UncompressedSize64), Typeflag: tar.TypeRegA, Mode: int64(item.FileHeader.Mode())}); err != nil {
 						break
 					}
 					var rdr io.ReadCloser
