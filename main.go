@@ -93,7 +93,11 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				return err
 			}
 			defer out.Close()
-			zipWriter := hashzip.NewWriterMethod(out, zstdMethod)
+			method := uint16(zstdMethod)
+			if *level == 0 {
+				method = 0
+			}
+			zipWriter := hashzip.NewWriterMethod(out, method)
 
 			// Copy tags and contents from initial image source (if there is one)
 			var copyTags []string

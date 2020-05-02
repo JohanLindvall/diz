@@ -12,6 +12,7 @@ import (
 	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/str"
+	"github.com/JohanLindvall/diz/util"
 
 	"github.com/ryanuber/go-glob"
 )
@@ -411,8 +412,8 @@ func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) 
 	return RegistryManifest{}, nil
 }
 
-func (z *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
-	if f, err := z.reader.OpenFileByHash(layerHash); f != nil && err == nil {
+func (a *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
+	if f, err := a.reader.OpenFileByHash(layerHash); f != nil && err == nil {
 		_, err = io.Copy(writer, f)
 		er := f.Close()
 		if err == nil {
@@ -425,6 +426,40 @@ func (z *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
 		}
 		return err
 	}
+}
+
+func (a *Archive) Read(path string) (read io.ReadCloser, err error) {
+	if strings.HasSuffix(path, "/") {
+		r, w := io.Pipe()
+		go func() {
+			tw := tar.NewWriter(w)
+			var err error
+			i := strings.LastIndex(path[:len(path)-1], "/") + 1
+			for _, item := range a.reader.File {
+				if strings.HasPrefix(item.Name, path) {
+					if err = tw.WriteHeader(&tar.Header{Name: item.Name[i:], Size: int64(item.UncompressedSize64), Typeflag: tar.TypeRegA, Mode: 0644}); err != nil {
+						break
+					}
+					var rdr io.ReadCloser
+					if rdr, err = item.Open(); err != nil {
+						break
+					}
+					if _, err = util.CopyAndClose(tw, rdr); err != nil {
+						break
+					}
+				}
+			}
+			er := tw.Close()
+			if err == nil {
+				err = er
+			}
+			w.CloseWithError(err)
+		}()
+		return r, nil
+	} else if item := a.reader.GetFile(path); item != nil {
+		return item.Open()
+	}
+	return nil, nil
 }
 
 type RegistryManifest struct {

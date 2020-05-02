@@ -73,3 +73,7 @@ func (z *ZipImageSource) WriteFileByHash(writer io.Writer, layer string) error {
 func (z *ZipImageSource) Manifests() []diz.Manifest {
 	return z.archive.Manifests
 }
+
+func (z *ZipImageSource) Read(path string) (io.ReadCloser, error) {
+	return z.archive.Read(path)
+}

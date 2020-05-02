@@ -9,6 +9,7 @@ import (
 
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/imagesource"
+	"github.com/JohanLindvall/diz/util"
 )
 
 func serve(zip string) (err error) {
@@ -48,6 +49,13 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := s.is.WriteFileByHash(w, sum); err == nil {
 			return
 		}
+	} else if match := getRe.FindStringSubmatch(r.URL.Path); match != nil {
+		path := match[1]
+		if rdr, err := s.is.Read(path); err == nil && rdr != nil {
+			w.Header().Add("Content-Type", "application/octet-stream")
+			_, err = util.CopyAndClose(w, rdr)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNotFound)
 }
@@ -66,4 +74,5 @@ func sendDigestResponse(w http.ResponseWriter, m diz.RegistryManifest) (err erro
 var (
 	manifestRe = regexp.MustCompile("^/v2/([^/]+)/manifests/([^/]+)$")
 	blobRe     = regexp.MustCompile("^/v2/[^/]+/blobs/sha256:([0-9a-f]{64})$")
+	getRe      = regexp.MustCompile("^/get/(.*)$")
 )
