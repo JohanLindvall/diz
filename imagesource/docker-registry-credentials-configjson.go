@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	for _, p := range []string{"$HOME/.docker/config.json", "$USERPROFILE/.docker/config.json"} {
+	for _, p := range []string{"$DOCKER_CONFIG", "$HOME/.docker/config.json", "$USERPROFILE/.docker/config.json"} {
 		if b, e := ioutil.ReadFile(os.ExpandEnv(p)); e == nil {
 			data := make(map[string]interface{}, 0)
 			if err := json.Unmarshal(b, &data); err == nil {
