@@ -115,7 +115,7 @@ func NewDeflateWriterLevel(w io.Writer, level int) (*DeflateWriter, error) {
 		return nil, fmt.Errorf("gzip: invalid compression level: %d", level)
 	}
 	z := new(DeflateWriter)
-	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0)*2)
+	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0))
 	z.init(w, level)
 	return z, nil
 }
@@ -169,7 +169,7 @@ func (z *DeflateWriter) Reset(w io.Writer) {
 	if z.results != nil && !z.closed {
 		close(z.results)
 	}
-	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0)*2)
+	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0))
 	z.init(w, z.level)
 }
 
