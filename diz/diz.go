@@ -17,13 +17,16 @@ import (
 	"github.com/ryanuber/go-glob"
 )
 
-var (
-	dizPrefix       = ".diz/"
-	manifestJSON    = "manifest.json"
-	repos           = "repositories"
-	layersTarSuffix = "/layer.tar"
-	latestTag       = "latest"
-	dotJSON         = ".json"
+const (
+	dizPrefix         = ".diz/"
+	manifestJSON      = "manifest.json"
+	repos             = "repositories"
+	layersTarSuffix   = "/layer.tar"
+	latestTag         = "latest"
+	dotJSON           = ".json"
+	manifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	configMediaType   = "application/vnd.docker.container.image.v1+json"
+	layerMediaType    = "application/vnd.docker.image.rootfs.diff.tar"
 )
 
 // Manifest defines a Docker image manifest
@@ -56,6 +59,7 @@ func NewArchive(reader io.ReaderAt, size int64) (*Archive, error) {
 	return &Archive{Manifests: manifests, reader: zipReader}, nil
 }
 
+// GetUncompressedSize returns the uncompressed size of the file with the given name
 func (a *Archive) GetUncompressedSize(name string) int64 {
 	if f := getDizFile(a.reader, name); f != nil {
 		return int64(f.UncompressedSize64)
@@ -280,6 +284,7 @@ func WriteManifests(manifests []Manifest, zipWriter *hashzip.Writer) error {
 	return nil
 }
 
+// MergeManifests mergs the manifests m1 and m2 into a single slice of manifests
 func MergeManifests(m1, m2 []Manifest) (result []Manifest) {
 	for _, m := range append(append([]Manifest(nil), m1...), m2...) {
 		handled := false
@@ -390,6 +395,7 @@ func FilterImageTags(imageTags, globTags []string) (result []string) {
 	return
 }
 
+// GetRegistryManifest gets the registry manifest for the given repo tag.
 func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) {
 	for _, m := range a.Manifests {
 		for _, rt := range m.RepoTags {
@@ -411,6 +417,7 @@ func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) 
 	return RegistryManifest{}, nil
 }
 
+// WriteFileByHash returns the file with the given content hash
 func (a *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
 	if f, err := a.reader.OpenFileByHash(layerHash); f != nil && err == nil {
 		_, err = io.Copy(writer, f)
@@ -427,28 +434,32 @@ func (a *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
 	}
 }
 
+// Read reads the path from the source zip and returns a zip archive if the path is a directory or single file if the path is a file
 func (a *Archive) Read(path string) (read io.ReadCloser, err error) {
 	if strings.HasSuffix(path, "/") {
 		r, w := io.Pipe()
 		go func() {
-			tw := tar.NewWriter(w)
+			zw := hashzip.NewWriter(w)
 			var err error
 			i := strings.LastIndex(path[:len(path)-1], "/") + 1
 			for _, item := range a.reader.File {
 				if strings.HasPrefix(item.Name, path) {
-					if err = tw.WriteHeader(&tar.Header{Name: item.Name[i:], Size: int64(item.UncompressedSize64), Typeflag: tar.TypeRegA, Mode: int64(item.FileHeader.Mode())}); err != nil {
+					hdr := item.FileHeader
+					hdr.Name = item.FileHeader.Name[i:]
+					var zfw io.Writer
+					if zfw, err = zw.CreateHeader(&hdr); err != nil {
 						break
 					}
 					var rdr io.ReadCloser
 					if rdr, err = item.Open(); err != nil {
 						break
 					}
-					if _, err = util.CopyAndClose(tw, rdr); err != nil {
+					if _, err = util.CopyAndClose(zfw, rdr); err != nil {
 						break
 					}
 				}
 			}
-			er := tw.Close()
+			er := zw.Close()
 			if err == nil {
 				err = er
 			}
@@ -461,6 +472,7 @@ func (a *Archive) Read(path string) (read io.ReadCloser, err error) {
 	return nil, nil
 }
 
+// RegistryManifest defines the Docker image manifest from the registry's point of view
 type RegistryManifest struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	MediaType     string `json:"mediaType"`
@@ -472,14 +484,9 @@ type RegistryManifest struct {
 	Layers []RegistryLayer `json:"layers"`
 }
 
+// RegistryLayer defines the Docker image layer from the registry's point of view
 type RegistryLayer struct {
 	MediaType string `json:"mediaType"`
 	Size      int64  `json:"size"`
 	Digest    string `json:"digest"`
 }
-
-const (
-	manifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
-	configMediaType   = "application/vnd.docker.container.image.v1+json"
-	layerMediaType    = "application/vnd.docker.image.rootfs.diff.tar"
-)
