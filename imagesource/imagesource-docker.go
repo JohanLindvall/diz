@@ -54,11 +54,8 @@ func (s *dockerImageSource) Close() error {
 }
 
 func (s *dockerImageSource) CopyToZip(writer *hashzip.Writer, tags []string) (m []diz.Manifest, err error) {
-	if err = s.pullIfNeeded(tags); err != nil {
-		return
-	}
 	var rdr io.ReadCloser
-	if rdr, err = s.cli.ImageSave(context.Background(), tags); err != nil {
+	if rdr, err = s.ReadTar(tags); err != nil {
 		return
 	}
 	defer rdr.Close()
@@ -72,6 +69,7 @@ func (s *dockerImageSource) ReadTar(tags []string) (io.ReadCloser, error) {
 	if err := s.pullIfNeeded(tags); err != nil {
 		return nil, err
 	}
+	fmt.Printf("Saving %d images\n", len(tags))
 	return s.cli.ImageSave(context.Background(), tags)
 }
 

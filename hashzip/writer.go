@@ -10,6 +10,8 @@ import (
 	"hash"
 	"io"
 	"os"
+
+	"github.com/klauspost/compress/flate"
 )
 
 // Writer holds the data for writing to a zip archive, ignoring duplicate file names
@@ -17,7 +19,6 @@ type Writer struct {
 	io.Writer
 	writer  *zip.Writer
 	verbose bool
-	method  uint16
 	h       hash.Hash
 	hashes  map[string]string
 	current string
@@ -25,12 +26,17 @@ type Writer struct {
 
 // NewWriter returns a new writer
 func NewWriter(w io.Writer) *Writer {
-	return NewWriterMethod(w, zip.Deflate)
+	return NewWriterLevel(w, flate.DefaultCompression)
 }
 
-// NewWriterMethod returns a new writer using a custom method
-func NewWriterMethod(w io.Writer, method uint16) *Writer {
-	return &Writer{writer: zip.NewWriter(w), verbose: w != os.Stdout, method: method, hashes: make(map[string]string, 0)}
+// NewWriterLevel returns a new writer using the specified level
+func NewWriterLevel(w io.Writer, level int) *Writer {
+	zw := zip.NewWriter(w)
+	zw.RegisterCompressor(zip.Deflate, func(wr io.Writer) (io.WriteCloser, error) {
+		return NewDeflateWriterLevel(wr, level)
+	})
+
+	return &Writer{writer: zw, verbose: w != os.Stdout, hashes: make(map[string]string, 0)}
 }
 
 // Exists returns true if the given file exists in the archive
@@ -40,14 +46,14 @@ func (w *Writer) Exists(name string) bool {
 
 // Create creates a new entry and returns a writer
 func (w *Writer) Create(name string) (io.Writer, error) {
-	return w.CreateHeader(&zip.FileHeader{Name: name, Method: w.method})
+	return w.CreateHeader(&zip.FileHeader{Name: name})
 }
 
 // CreateHeader creates a new header entry and returns a writer
 func (w *Writer) CreateHeader(fh *zip.FileHeader) (io.Writer, error) {
 	w.end()
 	copy := *fh
-	copy.Method = w.method
+	copy.Method = zip.Deflate
 	if w.hashes[copy.Name] != "" {
 		return nil, errors.New("file exists")
 	}
@@ -73,7 +79,7 @@ func (w *Writer) end() {
 // Close closes the zip writer
 func (w *Writer) Close() error {
 	w.end()
-	if wr, err := w.writer.CreateHeader(&zip.FileHeader{Name: ".hashes", Method: w.method}); err == nil {
+	if wr, err := w.writer.CreateHeader(&zip.FileHeader{Name: ".hashes", Method: zip.Deflate}); err == nil {
 		data, _ := json.Marshal(w.hashes)
 		io.Copy(wr, bytes.NewReader(data))
 	}

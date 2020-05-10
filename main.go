@@ -1,8 +1,8 @@
 package main
 
 import (
-	"archive/zip"
 	"bufio"
+	"compress/flate"
 	"context"
 	"errors"
 	"flag"
@@ -23,7 +23,7 @@ var (
 	fromZip = flag.String("fromzip", "", "Set to read Docker tags and images from zip file")
 	tagFile = flag.String("tagfile", "", "Set to load tags from file")
 	pull    = flag.Bool("pull", false, "If set, pulls images from docker registry")
-	store   = flag.Bool("store", false, "If set, files are stored uncompressed")
+	level   = flag.Int("level", flate.DefaultCompression, "Sets the deflate compression level (0-9)")
 )
 
 func main() {
@@ -85,11 +85,7 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				return err
 			}
 			defer out.Close()
-			method := uint16(zip.Deflate)
-			if *store {
-				method = 0
-			}
-			zipWriter := hashzip.NewWriterMethod(out, method)
+			zipWriter := hashzip.NewWriterLevel(out, *level)
 
 			// Copy tags and contents from initial image source (if there is one)
 			var copyTags []string
