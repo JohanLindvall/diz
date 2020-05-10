@@ -169,7 +169,7 @@ func (z *DeflateWriter) Reset(w io.Writer) {
 	if z.results != nil && !z.closed {
 		close(z.results)
 	}
-	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0))
+	z.SetConcurrency(defaultBlockSize, runtime.GOMAXPROCS(0)*2)
 	z.init(w, z.level)
 }
 

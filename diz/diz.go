@@ -417,21 +417,18 @@ func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) 
 	return RegistryManifest{}, nil
 }
 
-// WriteFileByHash returns the file with the given content hash
+// WriteFileByHash writes the file with the given content hash to the writer
 func (a *Archive) WriteFileByHash(writer io.Writer, layerHash string) error {
-	if f, err := a.reader.OpenFileByHash(layerHash); f != nil && err == nil {
-		_, err = io.Copy(writer, f)
-		er := f.Close()
-		if err == nil {
-			err = er
+	if f := a.reader.GetFileByHash(layerHash); f != nil {
+		if rdr, err := f.Open(); rdr != nil && err == nil {
+			_, err = util.CopyAndClose(writer, rdr)
+			return err
+		} else {
+			return err
 		}
-		return err
-	} else {
-		if err == nil {
-			err = errors.New("not found")
-		}
-		return err
 	}
+
+	return errors.New("not found")
 }
 
 // Read reads the path from the source zip and returns a zip archive if the path is a directory or single file if the path is a file
