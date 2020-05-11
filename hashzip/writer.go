@@ -1,7 +1,6 @@
 package hashzip
 
 import (
-	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -12,6 +11,7 @@ import (
 	"os"
 
 	"github.com/klauspost/compress/flate"
+	"github.com/klauspost/compress/zip"
 )
 
 // Writer holds the data for writing to a zip archive, ignoring duplicate file names
@@ -84,4 +84,17 @@ func (w *Writer) Close() error {
 		io.Copy(wr, bytes.NewReader(data))
 	}
 	return w.writer.Close()
+}
+
+// Copy copies the compressed contents of the source file to this archive
+func (w *Writer) Copy(name string, zf *File) error {
+	w.end()
+	if w.verbose {
+		fmt.Printf("Copying '%s'\n", name)
+	}
+	err := w.writer.Copy(name, zf.file)
+	if err == nil {
+		w.hashes[name] = zf.Hash
+	}
+	return err
 }

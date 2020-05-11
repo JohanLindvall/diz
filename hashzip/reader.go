@@ -4,7 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"archive/zip"
+	"github.com/klauspost/compress/zip"
 
 	"encoding/json"
 )

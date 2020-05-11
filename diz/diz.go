@@ -173,10 +173,7 @@ func (a *Archive) CopyToZip(zipWriter *hashzip.Writer, manifests []Manifest) (er
 		} else {
 			hdr := zf.FileHeader
 			if !zipWriter.Exists(hdr.Name) {
-				if writer, err = zipWriter.CreateHeader(&hdr); err != nil {
-					return
-				}
-				err = copyZipFile(writer, zf)
+				err = zipWriter.Copy(zf.Name, zf)
 			}
 		}
 		return
@@ -441,17 +438,7 @@ func (a *Archive) Read(path string) (read io.ReadCloser, err error) {
 			i := strings.LastIndex(path[:len(path)-1], "/") + 1
 			for _, item := range a.reader.File {
 				if strings.HasPrefix(item.Name, path) {
-					hdr := item.FileHeader
-					hdr.Name = item.FileHeader.Name[i:]
-					var zfw io.Writer
-					if zfw, err = zw.CreateHeader(&hdr); err != nil {
-						break
-					}
-					var rdr io.ReadCloser
-					if rdr, err = item.Open(); err != nil {
-						break
-					}
-					if _, err = util.CopyAndClose(zfw, rdr); err != nil {
+					if err = zw.Copy(item.FileHeader.Name[i:], item); err != nil {
 						break
 					}
 				}
