@@ -3,8 +3,10 @@ package diz
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"strings"
@@ -338,7 +340,7 @@ func createManifestRepositories(manifests []Manifest) (result map[string][]byte,
 // FilterManifests returns a copy of the manifests filtered according to the tags glob
 func FilterManifests(manifests []Manifest, tags []string) (result []Manifest) {
 	for _, m := range manifests {
-		mm := Manifest{Config: m.Config, Layers: m.Layers, RepoTags: FilterImageTags(m.RepoTags, tags)}
+		mm := Manifest{Config: m.Config, Layers: m.Layers, RepoTags: FilterImageTags(m.RepoTags, []string{}, tags)}
 		if len(mm.RepoTags) > 0 {
 			result = append(result, mm)
 		}
@@ -362,8 +364,8 @@ func GetConfigs(manifests []Manifest) (result []string) {
 }
 
 // FilterImageTags filters the given image tags according to the glob expressions. A '-' prepending the glob expression means a negative match
-func FilterImageTags(imageTags, globTags []string) (result []string) {
-	for _, repoTag := range imageTags {
+func FilterImageTags(repoTags, repoDigests, globTags []string) (result []string) {
+	for _, repoTag := range repoTags {
 		if repoTag != "<none>:<none>" {
 			first := true
 			match := false
@@ -389,14 +391,33 @@ func FilterImageTags(imageTags, globTags []string) (result []string) {
 			}
 		}
 	}
+
+	for _, repoDigest := range repoDigests {
+		for _, globTag := range globTags {
+			if dockerref.CompareReferences(repoDigest, globTag) {
+				result = append(result, repoDigest)
+				break
+			}
+		}
+	}
+
 	return
+}
+
+// GetManifestBytes returns the manifest bytes and digest
+func GetManifestBytes(m RegistryManifest) ([]byte, string, error) {
+	if js, err := json.MarshalIndent(m, "", "  "); err == nil {
+		return js, fmt.Sprintf("%x", sha256.Sum256(js)), nil
+	} else {
+		return nil, "", err
+	}
 }
 
 // GetRegistryManifest gets the registry manifest for the given repo tag.
 func (a *Archive) GetRegistryManifest(repoTag string) (RegistryManifest, error) {
 	for _, m := range a.Manifests {
 		for _, rt := range m.RepoTags {
-			if dockerref.FamiliarReference(repoTag) == rt {
+			if dockerref.CompareReferences(repoTag, rt) {
 				result := RegistryManifest{}
 				result.SchemaVersion = 2
 				result.MediaType = manifestMediaType

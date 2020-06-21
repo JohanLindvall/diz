@@ -43,7 +43,7 @@ func (s *dockerImageSource) globTags(globTags []string) (result []string, err er
 	}
 
 	for _, image := range images {
-		result = append(result, diz.FilterImageTags(image.RepoTags, globTags)...)
+		result = append(result, diz.FilterImageTags(image.RepoTags, image.RepoDigests, globTags)...)
 	}
 
 	return
@@ -82,7 +82,7 @@ func (s *dockerImageSource) pullIfNeeded(tags []string) error {
 		for _, tag := range str.RemoveSlice(tags, existing) {
 			normalized := dockerref.NormalizeReference(tag)
 			fmt.Printf("Pulling '%s'\n", normalized)
-			reader, err := s.cli.ImagePull(context.Background(), normalized, types.ImagePullOptions{RegistryAuth: getCredentials(dockerref.GetRepository(normalized))})
+			reader, err := s.cli.ImagePull(context.Background(), normalized, types.ImagePullOptions{RegistryAuth: getCredentials(dockerref.GetRegistry(normalized))})
 			if err != nil {
 				return err
 			}

@@ -1,29 +1,31 @@
 package main
 
 import (
-	"bufio"
 	"compress/flate"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/JohanLindvall/diz/diz"
+	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
 	"github.com/JohanLindvall/diz/imagesource"
 	"github.com/JohanLindvall/diz/str"
+	"github.com/JohanLindvall/diz/util"
 	"github.com/docker/docker/client"
 )
 
 var (
-	cli     *client.Client
-	fromZip = flag.String("fromzip", "", "Set to read Docker tags and images from zip file")
-	tagFile = flag.String("tagfile", "", "Set to load tags from file")
-	pull    = flag.Bool("pull", false, "If set, pulls images from docker registry")
-	level   = flag.Int("level", flate.DefaultCompression, "Sets the deflate compression level (0-9)")
+	cli             *client.Client
+	fromZip         = flag.String("fromzip", "", "Set to read Docker tags and images from zip file")
+	tagFile         = flag.String("tagfile", "", "Set to read and write tags from file")
+	digestTags      = flag.Bool("digest", false, "If set, update tags to use repo digest")
+	pull            = flag.Bool("pull", false, "If set, pulls images from docker registry")
+	level           = flag.Int("level", flate.DefaultCompression, "Sets the deflate compression level (0-9)")
+	registryAddress = flag.String("registryAddress", "", "Sets the registry address of the given docker references")
 )
 
 func main() {
@@ -107,6 +109,9 @@ func createUpdate(initial imagesource.ImageSource, fn string, globTags []string)
 				if er := zipWriter.Close(); err == nil {
 					err = er
 				}
+				if err == nil {
+					err = updateTags(fn)
+				}
 				return err
 			}
 		}
@@ -176,27 +181,83 @@ func getOutFile(fn string) (out *os.File, err error) {
 	return
 }
 
-var (
-	tagRe = regexp.MustCompile("[a-zA-Z0-9/:._-]+")
-)
-
 func getTags(tags []string) []string {
 	if *tagFile != "" {
-		if f, err := os.Open(*tagFile); err == nil {
-			for s := bufio.NewScanner(f); s.Scan(); {
-				ln := s.Text()
-				if i := strings.Index(ln, "#"); i != -1 {
-					ln = ln[:i]
-				}
-				if split := strings.SplitN(ln, "=", 2); len(split) == 2 {
-					ln = split[1]
-				}
-				if match := tagRe.FindString(ln); match != "" {
-					tags = append(tags, match)
+		if lines, err := util.ReadLines(*tagFile); err == nil {
+			for _, line := range lines {
+				if tag := getDockerReference(line); tag != "" {
+					tags = append(tags, tag)
 				}
 			}
-			f.Close()
 		}
 	}
+
 	return tags
+}
+
+func updateTags(zipFile string) error {
+	if !*digestTags && *registryAddress == "" {
+		return nil
+	}
+	zf, err := imagesource.NewZipImageSource(zipFile)
+	if err != nil {
+		return err
+	}
+	tagsToDigest, err := zf.GetNormalizedTagsToDigest()
+	if err != nil {
+		return err
+	}
+
+	if *tagFile == "" {
+		for tag, digest := range tagsToDigest {
+			fmt.Printf("%s=%s\n", tag, digest)
+		}
+	} else {
+		lines, err := util.ReadLines(*tagFile)
+		if err != nil {
+			return err
+		}
+		changed := false
+		for i, line := range lines {
+			if ref := getDockerReference(line); ref != "" {
+				if digest, ok := tagsToDigest[dockerref.NormalizeReference(ref)]; ok {
+					registry, repository, tag := dockerref.SplitRegistryRepositoryTag(ref)
+					if *digestTags {
+						tag = dockerref.MakeDigestTag(digest)
+					}
+					if *registryAddress != "" {
+						registry = *registryAddress
+					}
+					newRef := dockerref.JoinRegistryRepositoryTag(registry, repository, tag)
+					line = strings.Replace(line, ref, newRef, -1)
+					if lines[i] != line {
+						changed = true
+						lines[i] = line
+					}
+				}
+			}
+		}
+
+		if changed {
+			err = util.WriteLines(*tagFile, lines)
+		}
+	}
+
+	return err
+}
+
+func getDockerReference(line string) string {
+	if i := strings.Index(line, "#"); i != -1 {
+		line = line[:i]
+	}
+	if split := strings.SplitN(line, "=", 2); len(split) == 2 {
+		line = split[1]
+	}
+	line = strings.TrimSpace(line)
+
+	if dockerref.IsValidReference(line) {
+		return line
+	}
+
+	return ""
 }

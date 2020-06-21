@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/JohanLindvall/diz/diz"
+	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
 )
 
@@ -76,4 +77,35 @@ func (z *ZipImageSource) Manifests() []diz.Manifest {
 
 func (z *ZipImageSource) Read(path string) (io.ReadCloser, error) {
 	return z.archive.Read(path)
+}
+
+func (z *ZipImageSource) GetDigestToTags() (result map[string][]string, err error) {
+	result = make(map[string][]string)
+	tags, _ := z.GlobTags([]string{"*"})
+	for _, tag := range tags {
+		var repoManifest diz.RegistryManifest
+		if repoManifest, err = z.GetRegistryManifest(tag); err != nil {
+			break
+		}
+		var digest string
+		if _, digest, err = diz.GetManifestBytes(repoManifest); err != nil {
+			break
+		}
+		result[digest] = append(result[digest], tag)
+	}
+	return
+}
+
+func (z *ZipImageSource) GetNormalizedTagsToDigest() (result map[string]string, err error) {
+	result = make(map[string]string)
+	var digestToTags map[string][]string
+	if digestToTags, err = z.GetDigestToTags(); err == nil {
+		for digest, tags := range digestToTags {
+			for _, tag := range tags {
+				result[dockerref.NormalizeReference(tag)] = digest
+			}
+		}
+	}
+
+	return
 }
