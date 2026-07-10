@@ -86,15 +86,28 @@ func (w *Writer) Close() error {
 	return w.writer.Close()
 }
 
-// Copy copies the compressed contents of the source file to this archive
+// Copy copies the compressed contents of the source file to this archive under
+// the given name, bypassing decompression and recompression.
 func (w *Writer) Copy(name string, zf *File) error {
 	w.end()
 	if w.verbose {
 		fmt.Printf("Copying '%s'\n", name)
 	}
-	err := w.writer.Copy(name, zf.file)
-	if err == nil {
-		w.hashes[name] = zf.Hash
+	// zip.Writer.Copy always reuses the source name; copy the raw entry
+	// ourselves so it can be stored under a different name.
+	raw, err := zf.file.OpenRaw()
+	if err != nil {
+		return err
 	}
-	return err
+	header := zf.file.FileHeader
+	header.Name = name
+	entry, err := w.writer.CreateRaw(&header)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(entry, raw); err != nil {
+		return err
+	}
+	w.hashes[name] = zf.Hash
+	return nil
 }

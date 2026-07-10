@@ -2,7 +2,6 @@ package hashzip
 
 import (
 	"io"
-	"io/ioutil"
 
 	"github.com/klauspost/compress/zip"
 
@@ -41,7 +40,7 @@ func NewReader(r io.ReaderAt, size int64) (*Reader, error) {
 			if err != nil {
 				return nil, err
 			}
-			b, err := ioutil.ReadAll(s)
+			b, err := io.ReadAll(s)
 			s.Close()
 			if err != nil {
 				return nil, err
