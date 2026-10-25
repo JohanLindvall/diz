@@ -2,7 +2,7 @@ package util
 
 import (
 	"io"
-	"io/ioutil"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -33,7 +33,7 @@ func CopyAndClose(w io.Writer, r io.ReadCloser) (written int64, err error) {
 }
 
 func ReadLines(fn string) ([]string, error) {
-	if bytes, err := ioutil.ReadFile(fn); err == nil {
+	if bytes, err := os.ReadFile(fn); err == nil {
 		return strings.Split(strings.ReplaceAll(string(bytes), windowsLineEnding, unixLineEnding), unixLineEnding), nil
 	} else {
 		return nil, err
@@ -41,5 +41,5 @@ func ReadLines(fn string) ([]string, error) {
 }
 
 func WriteLines(fn string, data []string) error {
-	return ioutil.WriteFile(fn, []byte(strings.Join(data, lineEnding)), 0644)
+	return os.WriteFile(fn, []byte(strings.Join(data, lineEnding)), 0644)
 }

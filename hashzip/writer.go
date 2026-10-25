@@ -1,7 +1,6 @@
 package hashzip
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -41,7 +40,8 @@ func NewWriterLevel(w io.Writer, level int) *Writer {
 
 // Exists returns true if the given file exists in the archive
 func (w *Writer) Exists(name string) bool {
-	return w.hashes[name] != ""
+	_, exists := w.hashes[name]
+	return exists || w.h != nil && w.current == name
 }
 
 // Create creates a new entry and returns a writer
@@ -54,19 +54,19 @@ func (w *Writer) CreateHeader(fh *zip.FileHeader) (io.Writer, error) {
 	w.end()
 	copy := *fh
 	copy.Method = zip.Deflate
-	if w.hashes[copy.Name] != "" {
+	if w.Exists(copy.Name) {
 		return nil, errors.New("file exists")
 	}
-	w.current = copy.Name
+	writer, err := w.writer.CreateHeader(&copy)
+	if err != nil {
+		return nil, err
+	}
 	if w.verbose {
 		fmt.Printf("Writing '%s'\n", copy.Name)
 	}
+	w.current = copy.Name
 	w.h = sha256.New()
-	if writer, err := w.writer.CreateHeader(&copy); err == nil {
-		return io.MultiWriter(writer, w.h), err
-	} else {
-		return nil, err
-	}
+	return io.MultiWriter(writer, w.h), nil
 }
 
 func (w *Writer) end() {
@@ -77,24 +77,50 @@ func (w *Writer) end() {
 }
 
 // Close closes the zip writer
-func (w *Writer) Close() error {
+func (w *Writer) Close() (err error) {
+	defer func() {
+		if closeErr := w.writer.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	w.end()
-	if wr, err := w.writer.CreateHeader(&zip.FileHeader{Name: ".hashes", Method: zip.Deflate}); err == nil {
-		data, _ := json.Marshal(w.hashes)
-		io.Copy(wr, bytes.NewReader(data))
+	wr, err := w.writer.CreateHeader(&zip.FileHeader{Name: ".hashes", Method: zip.Deflate})
+	if err != nil {
+		return err
 	}
-	return w.writer.Close()
+	data, err := json.Marshal(w.hashes)
+	if err != nil {
+		return err
+	}
+	_, err = wr.Write(data)
+	return err
 }
 
-// Copy copies the compressed contents of the source file to this archive
+// Copy copies the compressed contents of the source file to this archive under
+// the given name, bypassing decompression and recompression.
 func (w *Writer) Copy(name string, zf *File) error {
 	w.end()
+	if w.Exists(name) {
+		return errors.New("file exists")
+	}
 	if w.verbose {
 		fmt.Printf("Copying '%s'\n", name)
 	}
-	err := w.writer.Copy(name, zf.file)
-	if err == nil {
-		w.hashes[name] = zf.Hash
+	// zip.Writer.Copy always reuses the source name; copy the raw entry
+	// ourselves so it can be stored under a different name.
+	raw, err := zf.file.OpenRaw()
+	if err != nil {
+		return err
 	}
-	return err
+	header := zf.file.FileHeader
+	header.Name = name
+	entry, err := w.writer.CreateRaw(&header)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(entry, raw); err != nil {
+		return err
+	}
+	w.hashes[name] = zf.Hash
+	return nil
 }

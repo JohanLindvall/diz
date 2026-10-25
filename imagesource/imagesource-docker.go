@@ -1,17 +1,16 @@
 package imagesource
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"slices"
 
 	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/dockerref"
 	"github.com/JohanLindvall/diz/hashzip"
-	"github.com/JohanLindvall/diz/str"
 	"github.com/JohanLindvall/diz/util"
-	"github.com/docker/distribution/context"
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 )
 
@@ -37,13 +36,13 @@ func (s *dockerImageSource) GlobTags(globTags []string) (result []string, err er
 }
 
 func (s *dockerImageSource) globTags(globTags []string) (result []string, err error) {
-	var images []types.ImageSummary
-	if images, err = s.cli.ImageList(context.Background(), types.ImageListOptions{}); err != nil {
+	var images []image.Summary
+	if images, err = s.cli.ImageList(context.Background(), image.ListOptions{}); err != nil {
 		return
 	}
 
-	for _, image := range images {
-		result = append(result, diz.FilterImageTags(image.RepoTags, image.RepoDigests, globTags)...)
+	for _, img := range images {
+		result = append(result, diz.FilterTags(img.RepoTags, img.RepoDigests, globTags)...)
 	}
 
 	return
@@ -79,14 +78,14 @@ func (s *dockerImageSource) pullIfNeeded(tags []string) error {
 		if err != nil {
 			return err
 		}
-		for _, tag := range str.RemoveSlice(tags, existing) {
+		for _, tag := range slices.DeleteFunc(slices.Clone(tags), func(s string) bool { return slices.Contains(existing, s) }) {
 			normalized := dockerref.NormalizeReference(tag)
 			fmt.Printf("Pulling '%s'\n", normalized)
-			reader, err := s.cli.ImagePull(context.Background(), normalized, types.ImagePullOptions{RegistryAuth: getCredentials(dockerref.GetRegistry(normalized))})
+			reader, err := s.cli.ImagePull(context.Background(), normalized, image.PullOptions{RegistryAuth: getCredentials(dockerref.GetRegistry(normalized))})
 			if err != nil {
 				return err
 			}
-			if _, err = util.CopyAndClose(ioutil.Discard, reader); err != nil {
+			if _, err = util.CopyAndClose(io.Discard, reader); err != nil {
 				return err
 			}
 		}
