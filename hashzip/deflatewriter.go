@@ -22,8 +22,6 @@
 //   - Dropped the GZIP trailer (CRC32 + ISIZE) written in Close, and with it the
 //     hash.Hash32/crc32 digest field and the [10]byte scratch buffer that only
 //     existed to build the header and trailer.
-//   - Kept interface{} instead of upstream's any, to stay buildable under the
-//     module's `go 1.14` directive.
 //
 // The parallel engine itself — block splitting, one goroutine per block, the
 // ordered fan-in writer, the sync.Pool reuse, and prevTail dictionary priming —
@@ -110,8 +108,7 @@ func (z *DeflateWriter) SetConcurrency(blockSize, blocks int) error {
 	z.blockSize = blockSize
 	z.results = make(chan result, blocks)
 	z.blocks = blocks
-	// diz: upstream uses `any`; interface{} keeps this buildable under go 1.14.
-	z.dstPool.New = func() interface{} { return make([]byte, 0, blockSize+(blockSize)>>4) }
+	z.dstPool.New = func() any { return make([]byte, 0, blockSize+(blockSize)>>4) }
 	return nil
 }
 
@@ -176,7 +173,7 @@ func (z *DeflateWriter) init(w io.Writer, level int) {
 	}
 	z.size = 0
 	if z.dictFlatePool.New == nil {
-		z.dictFlatePool.New = func() interface{} {
+		z.dictFlatePool.New = func() any {
 			f, _ := flate.NewWriterDict(w, level, nil)
 			return f
 		}
