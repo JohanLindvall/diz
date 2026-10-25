@@ -15,8 +15,8 @@ import (
 // one of zf (an existing zip entry) or contents (synthesized bytes) is set.
 type fileHandler func(zf *hashzip.File, name string, contents []byte) error
 
-// selectedFiles returns the set of top-level entry names referenced by the
-// given manifests (their configs and layer directories).
+// selectedFiles returns config and layer paths, or layer directories for the
+// legacy Docker save layout.
 func selectedFiles(manifests []Manifest) map[string]bool {
 	include := make(map[string]bool)
 	for _, m := range manifests {
@@ -48,7 +48,7 @@ func (a *Archive) copyTo(handler fileHandler, manifests []Manifest, includeForei
 			fn := f.Name[len(dizPrefix):]
 			if fn != repos && fn != manifestJSON {
 				dir := strings.SplitN(fn, "/", 2)[0]
-				included = include[dir]
+				included = include[fn] || include[dir]
 			}
 		} else {
 			included = includeForeign

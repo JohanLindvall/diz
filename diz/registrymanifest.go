@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/JohanLindvall/diz/dockerref"
 )
@@ -48,7 +47,7 @@ func (a *Archive) registryManifest(m Manifest) RegistryManifest {
 	result := RegistryManifest{SchemaVersion: 2, MediaType: manifestMediaType}
 	result.Config.MediaType = configMediaType
 	result.Config.Size = a.UncompressedSize(m.Config)
-	result.Config.Digest = "sha256:" + strings.TrimSuffix(m.Config, dotJSON)
+	result.Config.Digest = "sha256:" + a.reader.GetHash(dizPrefix+m.Config)
 	for _, l := range m.Layers {
 		result.Layers = append(result.Layers, RegistryLayer{
 			MediaType: layerMediaType,

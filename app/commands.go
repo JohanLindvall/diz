@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -124,7 +126,21 @@ func (a *App) Restore(tags []string) error {
 	if err != nil {
 		return err
 	}
-	return response.Body.Close()
+	defer response.Body.Close()
+	decoder := json.NewDecoder(response.Body)
+	for {
+		var message struct {
+			Error string `json:"error"`
+		}
+		if err := decoder.Decode(&message); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("read Docker load response: %w", err)
+		}
+		if message.Error != "" {
+			return fmt.Errorf("load image: %s", message.Error)
+		}
+	}
 }
 
 // Serve serves the given zip archive as a Docker registry.

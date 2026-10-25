@@ -110,7 +110,7 @@ func TestZipManifestsAndRegistryManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rm.Config.Digest != "sha256:config" {
+	if rm.Config.Digest != fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(`{"config":true}`))) {
 		t.Fatalf("config digest = %q", rm.Config.Digest)
 	}
 	if len(rm.Layers) != 1 || rm.Layers[0].Digest != "sha256:"+layerHash {
