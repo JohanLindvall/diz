@@ -28,6 +28,28 @@ func run() error {
 	flag.BoolVar(&opts.Pull, "pull", false, "If set, pulls images from docker registry")
 	flag.IntVar(&opts.Level, "level", flate.DefaultCompression, "Sets the deflate compression level (0-9)")
 	flag.StringVar(&opts.RegistryAddress, "registryAddress", "", "Sets the registry address of the given docker references")
+	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), `diz - Docker images, packed to go.
+
+Usage: diz [flags] <command> [args...]
+
+Commands:
+  list [tags...]                     List matching image tags
+  create <file> [tags...]            Create an image ZIP archive
+  update <initial> <file> [tags...]  Write an updated archive to a new file
+  restore [tags...]                  Load matching images into Docker
+  serve <file>                       Serve an archive on HTTP port 5000
+
+Examples:
+  diz create images.diz 'alpine:*'
+  diz -fromzip images.diz list '*'
+  diz -fromzip images.diz restore '*'
+
+Place flags before the command. Quote globs; use '*' to select all images.
+
+Flags:`)
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	args := flag.Args()

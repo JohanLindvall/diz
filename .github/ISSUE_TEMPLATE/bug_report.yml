@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible problem with an archive, command, or registry endpoint.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve diz. Please use private vulnerability reporting for security issues, and remove credentials or private image details from logs.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Include the exact command and, if possible, a public image tag or small synthetic archive.
+      placeholder: |
+        docker pull alpine:3.24
+        diz create images.diz alpine:3.24
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your diz commit or installation date, OS/architecture, Docker version, and image-store backend when relevant.
+      placeholder: |
+        diz commit:
+        OS and architecture:
+        Docker version:
+        Docker image store (classic/containerd):
+        Go version (if built locally):
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Paste sanitized error output or logs.
+      render: text

@@ -16,7 +16,6 @@ const (
 	repos             = "repositories"
 	layersTarSuffix   = "/layer.tar"
 	latestTag         = "latest"
-	dotJSON           = ".json"
 	manifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 	configMediaType   = "application/vnd.docker.container.image.v1+json"
 	layerMediaType    = "application/vnd.docker.image.rootfs.diff.tar"

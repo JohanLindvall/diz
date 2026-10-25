@@ -1,0 +1,3 @@
+# Copy this file before using options that rewrite image references.
+base=alpine:3.24
+web=nginx:alpine
