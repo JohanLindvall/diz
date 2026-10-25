@@ -1,6 +1,7 @@
 package hashzip
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"fmt"
@@ -172,5 +173,48 @@ func TestWriterCloseInvalidCompressionLevel(t *testing.T) {
 	w := NewWriterLevel(&out, BestCompression+1)
 	if err := w.Close(); err == nil {
 		t.Fatal("Close hid the error writing the hash index")
+	}
+}
+
+func TestWriterStandardZipCompatibility(t *testing.T) {
+	files := map[string][]byte{
+		"empty": nil,
+		"small": []byte("small entry"),
+		"large": bytes.Repeat([]byte("parallel compression\n"), 150000),
+	}
+	var out bytes.Buffer
+	w := NewWriter(&out)
+	for name, content := range files {
+		entry, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.File) != len(files)+1 {
+		t.Fatalf("got %d ZIP entries, want %d", len(r.File), len(files)+1)
+	}
+	for _, file := range r.File {
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", file.Name, err)
+		}
+		if file.Name != ".hashes" && !bytes.Equal(content, files[file.Name]) {
+			t.Fatalf("%s: ZIP entry contents differ", file.Name)
+		}
 	}
 }
