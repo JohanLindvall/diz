@@ -10,8 +10,8 @@ import (
 	"github.com/JohanLindvall/diz/util"
 )
 
-// errNotFound is returned when a requested blob cannot be located in the archive.
-var errNotFound = errors.New("not found")
+// ErrNotFound is returned when a requested blob or manifest is absent.
+var ErrNotFound = errors.New("not found")
 
 // Archive holds the data for reading a diz zip archive.
 type Archive struct {
@@ -47,7 +47,7 @@ func (a *Archive) UncompressedSize(name string) int64 {
 func (a *Archive) WriteBlob(writer io.Writer, hash string) error {
 	f := a.reader.GetFileByHash(hash)
 	if f == nil {
-		return errNotFound
+		return ErrNotFound
 	}
 	rdr, err := f.Open()
 	if err != nil {

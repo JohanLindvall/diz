@@ -3,10 +3,12 @@
 package registry
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"regexp"
 
+	"github.com/JohanLindvall/diz/diz"
 	"github.com/JohanLindvall/diz/imagesource"
 )
 
@@ -48,8 +50,8 @@ func NewServer(source *imagesource.ZipImageSource) (*Server, error) {
 	s.routes = []route{
 		{regexp.MustCompile(`^/v2/$`), s.handleBase},
 		{regexp.MustCompile(`^/v2/manifests$`), s.handleManifestList},
-		{regexp.MustCompile(`^/v2/[^/]+/(?:manifests|blobs)/sha256:([0-9a-f]{64})$`), s.handleBlob},
-		{regexp.MustCompile(`^/v2/([^/]+)/manifests/([^/]+)$`), s.handleManifestByTag},
+		{regexp.MustCompile(`^/v2/[^/]+(?:/[^/]+)*/(?:manifests|blobs)/sha256:([0-9a-f]{64})$`), s.handleBlob},
+		{regexp.MustCompile(`^/v2/([^/]+(?:/[^/]+)*)/manifests/([^/]+)$`), s.handleManifestByTag},
 		{regexp.MustCompile(`^/get/(.*)$`), s.handleGet},
 	}
 	return s, nil
@@ -62,7 +64,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, rt := range s.routes {
 		if match := rt.pattern.FindStringSubmatch(r.URL.Path); match != nil {
 			if err := rt.handle(w, r, match); err != nil {
-				w.WriteHeader(http.StatusNotFound)
+				if errors.Is(err, diz.ErrNotFound) {
+					w.WriteHeader(http.StatusNotFound)
+				} else {
+					log.Printf("%s %s: %v", r.Method, r.URL, err)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
 			}
 			return
 		}

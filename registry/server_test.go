@@ -24,7 +24,7 @@ const (
 
 // buildDockerSaveTar builds an in-memory tar resembling `docker save` output
 // for a single image with one layer.
-func buildDockerSaveTar(t *testing.T, layer []byte) []byte {
+func buildDockerSaveTar(t *testing.T, layer []byte, repoTag string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
@@ -38,7 +38,7 @@ func buildDockerSaveTar(t *testing.T, layer []byte) []byte {
 	}
 	write("config.json", []byte(testConfig))
 	write("layerid/layer.tar", layer)
-	write("manifest.json", []byte(`[{"Config":"config.json","RepoTags":["`+testRepoTag+`"],"Layers":["layerid/layer.tar"]}]`))
+	write("manifest.json", []byte(`[{"Config":"config.json","RepoTags":["`+repoTag+`"],"Layers":["layerid/layer.tar"]}]`))
 	write("repositories", []byte(`{"myimage":{"v1":"layerid"}}`))
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)
@@ -50,11 +50,16 @@ func buildDockerSaveTar(t *testing.T, layer []byte) []byte {
 // along with the raw layer bytes it contains.
 func newTestServer(t *testing.T) (*Server, []byte) {
 	t.Helper()
+	return newTestServerWithTag(t, testRepoTag)
+}
+
+func newTestServerWithTag(t *testing.T, repoTag string) (*Server, []byte) {
+	t.Helper()
 	layer := []byte("fake layer contents for the registry integration test")
 
 	var zipBuf bytes.Buffer
 	zw := hashzip.NewWriter(&zipBuf)
-	manifests, err := diz.CopyFromTar(bytes.NewReader(buildDockerSaveTar(t, layer)), zw)
+	manifests, err := diz.CopyFromTar(bytes.NewReader(buildDockerSaveTar(t, layer, repoTag)), zw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,5 +186,68 @@ func TestUnknownRouteIs404(t *testing.T) {
 	s, _ := newTestServer(t)
 	if rec := get(s, "/nope"); rec.Code != http.StatusNotFound {
 		t.Fatalf("code = %d, want 404", rec.Code)
+	}
+}
+
+func TestNamespacedRepository(t *testing.T) {
+	const repo = "team/project/myimage"
+	s, layer := newTestServerWithTag(t, repo+":v1")
+	rm, err := s.source.RegistryManifest(repo + ":v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, digest, err := diz.MarshalRegistryManifest(rm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/v2/" + repo + "/manifests/v1",
+		"/v2/" + repo + "/manifests/sha256:" + digest,
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := get(s, path)
+			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), body) {
+				t.Fatalf("manifest response = %d %q", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Docker-Content-Digest"); got != "sha256:"+digest {
+				t.Fatalf("digest header = %q", got)
+			}
+		})
+	}
+	layerHash := fmt.Sprintf("%x", sha256.Sum256(layer))
+	rec := get(s, "/v2/"+repo+"/blobs/sha256:"+layerHash)
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), layer) {
+		t.Fatalf("blob response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMissingContentIs404(t *testing.T) {
+	s, _ := newTestServer(t)
+	for _, path := range []string{
+		"/v2/myimage/manifests/missing",
+		"/v2/unknown/manifests/v1",
+		"/v2/myimage/manifests/sha256:" + fmt.Sprintf("%064x", 0),
+		"/v2/myimage/blobs/sha256:" + fmt.Sprintf("%064x", 0),
+		"/get/missing",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := get(s, path)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("response = %d %q, want 404", rec.Code, rec.Body.String())
+			}
+			if digest := rec.Header().Get("Docker-Content-Digest"); digest != "" {
+				t.Fatalf("missing content has digest %q", digest)
+			}
+		})
+	}
+}
+
+func TestArchiveReadErrorIs500(t *testing.T) {
+	s, _ := newTestServer(t)
+	if err := s.source.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(s, "/get/.diz/config.json"); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("unreadable archive = %d, want 500", rec.Code)
 	}
 }

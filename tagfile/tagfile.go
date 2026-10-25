@@ -4,6 +4,7 @@
 package tagfile
 
 import (
+	"os"
 	"strings"
 
 	"github.com/JohanLindvall/diz/dockerref"
@@ -13,19 +14,26 @@ import (
 // Reference extracts the Docker reference from a single line, or returns "" if
 // the line holds no valid reference.
 func Reference(line string) string {
-	if i := strings.Index(line, "#"); i != -1 {
-		line = line[:i]
-	}
-	if split := strings.SplitN(line, "=", 2); len(split) == 2 {
-		line = split[1]
-	}
-	line = strings.TrimSpace(line)
+	start, end := referenceSpan(line)
+	return line[start:end]
+}
 
-	if dockerref.IsValidReference(line) {
-		return line
+// referenceSpan locates the reference without including its key or comment.
+func referenceSpan(line string) (start, end int) {
+	end = len(line)
+	if i := strings.IndexByte(line, '#'); i != -1 {
+		end = i
 	}
-
-	return ""
+	if i := strings.IndexByte(line[:end], '='); i != -1 {
+		start = i + 1
+	}
+	value := line[start:end]
+	ref := strings.TrimSpace(value)
+	if ref == "" || !dockerref.IsValidReference(ref) {
+		return 0, 0
+	}
+	start += strings.Index(value, ref)
+	return start, start + len(ref)
 }
 
 // Load reads path and returns every Docker reference found in it.
@@ -46,15 +54,18 @@ func Load(path string) ([]string, error) {
 // Rewrite applies transform to the reference on each line of path and writes the
 // file back if anything changed. transform returns the replacement reference and
 // true to substitute it in place, or false to leave the line unchanged.
+// Keys, comments, whitespace and line endings are preserved.
 func Rewrite(path string, transform func(ref string) (string, bool)) error {
-	lines, err := util.ReadLines(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
+	lines := strings.Split(string(data), "\n")
 
 	changed := false
 	for i, line := range lines {
-		ref := Reference(line)
+		start, end := referenceSpan(line)
+		ref := line[start:end]
 		if ref == "" {
 			continue
 		}
@@ -62,14 +73,12 @@ func Rewrite(path string, transform func(ref string) (string, bool)) error {
 		if !ok || newRef == ref {
 			continue
 		}
-		if updated := strings.ReplaceAll(line, ref, newRef); updated != line {
-			lines[i] = updated
-			changed = true
-		}
+		lines[i] = line[:start] + newRef + line[end:]
+		changed = true
 	}
 
 	if !changed {
 		return nil
 	}
-	return util.WriteLines(path, lines)
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }

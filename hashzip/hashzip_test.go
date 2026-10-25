@@ -42,8 +42,8 @@ func TestWriterExists(t *testing.T) {
 	if !w.Exists("a") {
 		t.Fatal("Exists(a) = false after it was ended")
 	}
-	if w.Exists("b") {
-		t.Fatal("Exists(b) = true before it was ended")
+	if !w.Exists("b") {
+		t.Fatal("Exists(b) = false for the current entry")
 	}
 	b.Write([]byte("y"))
 	w.Close()
@@ -138,5 +138,39 @@ func TestWriterCopyRenames(t *testing.T) {
 	// the content hash must survive the raw copy
 	if r2.GetHash("renamed.txt") != hashOf("alpha") {
 		t.Fatalf("copied hash = %q", r2.GetHash("renamed.txt"))
+	}
+}
+
+func TestWriterCopyRejectsDuplicate(t *testing.T) {
+	data := buildZip(t)
+	r, err := NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	w := NewWriter(&out)
+	if err := w.Copy("duplicate", r.GetFile("dir/a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Copy("duplicate", r.GetFile("b.txt")); err == nil {
+		t.Fatal("Copy accepted a duplicate entry name")
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	copy, err := NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copy.File) != 1 || copy.GetHash("duplicate") != hashOf("alpha") {
+		t.Fatalf("duplicate copy changed the archive: %+v", copy.File)
+	}
+}
+
+func TestWriterCloseInvalidCompressionLevel(t *testing.T) {
+	var out bytes.Buffer
+	w := NewWriterLevel(&out, BestCompression+1)
+	if err := w.Close(); err == nil {
+		t.Fatal("Close hid the error writing the hash index")
 	}
 }

@@ -1,7 +1,7 @@
 BINARY := diz
 GO     := go
 
-.PHONY: all build install test race cover vet fmt fmt-check tidy check clean
+.PHONY: all build install test race cover vet fmt fmt-check tidy tidy-check check clean
 
 ## all: format, tidy, vet, build, then run the race and coverage suites (default)
 all: fmt tidy vet build race cover
@@ -43,8 +43,12 @@ fmt-check:
 tidy:
 	$(GO) mod tidy
 
-## check: format check, vet and test (use in CI)
-check: fmt-check vet test
+## tidy-check: fail if go.mod/go.sum need updating, without changing them
+tidy-check:
+	$(GO) mod tidy -diff
+
+## check: check formatting and dependencies, vet, build and test (use in CI)
+check: fmt-check tidy-check vet build test
 
 ## clean: remove build artifacts
 clean:

@@ -2,7 +2,6 @@ package registry
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/JohanLindvall/diz/diz"
@@ -10,10 +9,6 @@ import (
 )
 
 const octetStream = "application/octet-stream"
-
-// errNotFound signals that a request matched a route but the requested content
-// does not exist, resulting in a 404.
-var errNotFound = errors.New("not found")
 
 // handleBase answers the registry version check at /v2/.
 func (s *Server) handleBase(w http.ResponseWriter, r *http.Request, match []string) error {
@@ -27,6 +22,7 @@ func (s *Server) handleManifestList(w http.ResponseWriter, r *http.Request, matc
 	if err != nil {
 		return err
 	}
+	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(js)
 	return err
 }
@@ -54,7 +50,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, match []strin
 		return err
 	}
 	if rdr == nil {
-		return errNotFound
+		return diz.ErrNotFound
 	}
 	w.Header().Set("Content-Type", octetStream)
 	_, err = util.CopyAndClose(w, rdr)

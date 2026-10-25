@@ -51,6 +51,26 @@ func TestRewriteNoChange(t *testing.T) {
 	assert.Equal(t, original, readFile(t, path))
 }
 
+func TestRewritePreservesSurroundingText(t *testing.T) {
+	for _, tc := range []struct {
+		name, original, want string
+	}{
+		{"bare reference", "  nginx:latest # keep nginx:latest\n", "  nginx:next # keep nginx:latest\n"},
+		{"matching key", "nginx:latest = nginx:latest # keep nginx:latest\n", "nginx:latest = nginx:next # keep nginx:latest\n"},
+		{"CRLF", "  image=\tnginx:latest  # keep nginx:latest\r\nredis:5\r\n", "  image=\tnginx:next  # keep nginx:latest\r\nredis:5\r\n"},
+		{"no final newline", "image=nginx:latest # keep nginx:latest", "image=nginx:next # keep nginx:latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTemp(t, tc.original)
+			err := Rewrite(path, func(ref string) (string, bool) {
+				return "nginx:next", ref == "nginx:latest"
+			})
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, readFile(t, path))
+		})
+	}
+}
+
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tags")

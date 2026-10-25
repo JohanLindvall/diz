@@ -133,5 +133,6 @@ func (a *App) Serve(zip string) error {
 	if err != nil {
 		return err
 	}
+	defer source.Close()
 	return registry.ListenAndServe(defaultServeAddress, source)
 }

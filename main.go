@@ -39,6 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer cli.Close()
 
 	a := app.New(cli, opts)
 	cmd, rest := args[0], args[1:]

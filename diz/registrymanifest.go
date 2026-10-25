@@ -30,7 +30,7 @@ type RegistryLayer struct {
 }
 
 // RegistryManifest builds the registry manifest for the given repo tag. If no
-// manifest matches the tag, the zero RegistryManifest is returned.
+// manifest matches the tag, it returns ErrNotFound.
 func (a *Archive) RegistryManifest(repoTag string) (RegistryManifest, error) {
 	for _, m := range a.Manifests {
 		for _, rt := range m.RepoTags {
@@ -40,7 +40,7 @@ func (a *Archive) RegistryManifest(repoTag string) (RegistryManifest, error) {
 		}
 	}
 
-	return RegistryManifest{}, nil
+	return RegistryManifest{}, ErrNotFound
 }
 
 // registryManifest converts a stored manifest into its registry representation.
