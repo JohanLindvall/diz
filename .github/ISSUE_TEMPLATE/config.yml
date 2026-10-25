@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Usage and command reference
+    url: https://github.com/JohanLindvall/diz/blob/master/docs/cli.md
+    about: Find commands, examples, and troubleshooting notes.
+  - name: Report a security vulnerability privately
+    url: https://github.com/JohanLindvall/diz/security/advisories/new
+    about: Send vulnerability details directly to the maintainer.

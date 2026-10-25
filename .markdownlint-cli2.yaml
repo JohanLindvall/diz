@@ -1,0 +1,5 @@
+globs:
+  - '**/*.md'
+  - '!node_modules/**'
+config:
+  MD013: false
